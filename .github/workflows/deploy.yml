@@ -1,0 +1,133 @@
+# Collects fresh jobs and publishes Jobvexa to GitHub Pages — free.
+# Runs every hour, on every push to main, and on demand (Actions tab → "Collect jobs & deploy" → Run workflow).
+# Each run adds new jobs and keeps recent ones, so the site always shows the full, current picture.
+name: Collect jobs & deploy
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '7 * * * *'   # every hour (GitHub may start it a few minutes late when busy)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package.json
+
+      - name: Install
+        run: npm install --no-audit --no-fund
+
+      - name: Test
+        run: npm test
+
+      - name: Work out the site address
+        id: site
+        run: |
+          OWNER="${{ github.repository_owner }}"
+          REPO="${{ github.event.repository.name }}"
+          OWNER_LC=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+          if [ "$(echo "$REPO" | tr '[:upper:]' '[:lower:]')" = "${OWNER_LC}.github.io" ]; then BASE=""; else BASE="/$REPO"; fi
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+          echo "url=https://${OWNER_LC}.github.io${BASE}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore data from the previous run
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache
+          key: jobvexa-state-${{ github.run_id }}
+          restore-keys: jobvexa-state-
+
+      - name: Collect jobs (Canada first, then USA)
+        id: collect
+        env:
+          # Add these under Settings → Secrets and variables → Actions. All optional.
+          ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
+          ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+          JOOBLE_API_KEY: ${{ secrets.JOOBLE_API_KEY }}
+          USAJOBS_API_KEY: ${{ secrets.USAJOBS_API_KEY }}
+          USAJOBS_USER_AGENT: ${{ secrets.USAJOBS_USER_AGENT }}
+          JOBBANK_FEED_URL: ${{ secrets.JOBBANK_FEED_URL }}
+          # Non-secret settings: Settings → Secrets and variables → Actions → Variables tab.
+          GREENHOUSE_BOARDS: ${{ vars.GREENHOUSE_BOARDS }}
+          LEVER_COMPANIES: ${{ vars.LEVER_COMPANIES }}
+          ASHBY_BOARDS: ${{ vars.ASHBY_BOARDS }}
+          ENABLE_SMARTRECRUITERS: ${{ vars.ENABLE_SMARTRECRUITERS }}
+          SMARTRECRUITERS_COMPANIES: ${{ vars.SMARTRECRUITERS_COMPANIES }}
+          DISABLE_ATS_DISCOVERY: ${{ vars.DISABLE_ATS_DISCOVERY }}
+          DAILY_CALLS_ADZUNA: ${{ vars.DAILY_CALLS_ADZUNA }}
+          DAILY_CALLS_JSEARCH: ${{ vars.DAILY_CALLS_JSEARCH }}
+          DAILY_CALLS_JOOBLE: ${{ vars.DAILY_CALLS_JOOBLE }}
+          DAILY_CALLS_USAJOBS: ${{ vars.DAILY_CALLS_USAJOBS }}
+          RUNS_PER_DAY: 24
+          STATE_FILE: .cache/state.json
+          MAX_JOBS: ${{ vars.MAX_JOBS }}
+          USE_MOCK_DATA: ${{ vars.USE_MOCK_DATA }}
+          # If every source fails, keep what is live now instead of publishing an empty site.
+          PREVIOUS_DATA_URL: ${{ steps.site.outputs.url }}/data/jobs.json
+        run: npm run collect
+
+      - name: Save data for the next run
+        if: steps.collect.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: .cache
+          key: jobvexa-state-${{ github.run_id }}
+
+      - name: Build static site
+        env:
+          NEXT_PUBLIC_BASE_PATH: ${{ steps.site.outputs.base }}
+          NEXT_PUBLIC_SITE_URL: ${{ steps.site.outputs.url }}
+          NEXT_TELEMETRY_DISABLED: 1
+        run: npm run build
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  keep-schedule-on:
+    # GitHub pauses scheduled workflows after 60 days without commits. Re-enabling this workflow once a week keeps hourly updates running.
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write   # only to re-enable this workflow's schedule
+    steps:
+      - name: Keep hourly schedule enabled
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$(date -u +%u%H)" = "700" ]; then
+            gh api -X PUT "repos/${{ github.repository }}/actions/workflows/deploy.yml/enable" && echo "Schedule kept on."
+          else
+            echo "Not the weekly check (Sunday 00 UTC) - nothing to do."
+          fi

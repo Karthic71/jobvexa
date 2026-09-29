@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Light is the base; dark applies via data-theme or the OS preference when no choice is stored. */
+:root {
+  --bg: 248 250 252; --panel: 255 255 255; --line: 226 232 240; --fg: 15 23 42; --muted: 100 116 139;
+  --accent: 2 132 199; --accent-fg: 255 255 255; --good: 5 150 105; --warn: 180 83 9; --bad: 220 38 38;
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  --bg: 8 12 20; --panel: 15 22 35; --line: 30 42 61; --fg: 226 232 240; --muted: 148 163 184;
+  --accent: 56 189 248; --accent-fg: 15 23 42; --good: 52 211 153; --warn: 252 211 77; --bad: 248 113 113;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: 8 12 20; --panel: 15 22 35; --line: 30 42 61; --fg: 226 232 240; --muted: 148 163 184;
+    --accent: 56 189 248; --accent-fg: 15 23 42; --good: 52 211 153; --warn: 252 211 77; --bad: 248 113 113;
+    color-scheme: dark;
+  }
+}
+
+body { @apply bg-bg text-fg antialiased; font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+.card { @apply rounded-xl border border-line bg-panel; }
+.field { @apply w-full rounded-lg border border-line bg-panel px-3 py-2 text-sm text-fg outline-none placeholder:text-muted focus:border-accent focus:ring-1 focus:ring-accent; }
+.chip { @apply inline-block rounded px-2 py-0.5 text-xs; }
+.btn { @apply inline-flex items-center justify-center rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg hover:brightness-110; }
+.btn-ghost { @apply inline-flex items-center justify-center rounded-lg border border-line px-3 py-1.5 text-sm text-fg hover:border-accent hover:text-accent; }
+:focus-visible { outline: 2px solid rgb(var(--accent)); outline-offset: 2px; }

@@ -1,0 +1,97 @@
+# Employers whose PUBLIC job boards (Greenhouse, Lever, Ashby) are checked on every
+# data refresh. One name per line. Canada first. A board is only used when its name
+# matches, and only Canada/US (or remote) postings are kept. Unknown names are skipped.
+# Add or remove freely — no API key is needed for these.
+
+# --- Canada ---
+Wealthsimple
+Cohere
+1Password
+Clio
+Faire
+Hootsuite
+Wattpad
+Ada
+Top Hat
+KOHO
+Borrowell
+League
+Thinkific
+Jobber
+Benevity
+Achievers
+Float
+Neo Financial
+Wave
+FreshBooks
+Tulip
+PointClickCare
+Geotab
+Unbounce
+Visier
+D2L
+Kinaxis
+Coveo
+Lightspeed
+Hopper
+Dialogue
+Trulioo
+Absorb Software
+Arctic Wolf
+eSentire
+Dapper Labs
+Properly
+Ritual
+Loopio
+Nudge
+Tealbook
+Cerebras
+Xanadu
+Sanctuary AI
+Waabi
+Applied Intuition
+Ecobee
+Shakepay
+Maple
+Felix Health
+Paymi
+Alida
+Swapcard
+AlayaCare
+Plooto
+Vidyard
+ApplyBoard
+Sonder
+Ownr
+
+# --- USA (second priority; many also hire in Canada) ---
+GitLab
+Okta
+Stripe
+Airbnb
+Coinbase
+Datadog
+Cloudflare
+Twilio
+Instacart
+Reddit
+Pinterest
+Robinhood
+Databricks
+DoorDash
+Lyft
+Dropbox
+Figma
+Notion
+Asana
+HubSpot
+Samsara
+Affirm
+Brex
+Ramp
+Plaid
+Duolingo
+Discord
+Squarespace
+Elastic
+MongoDB
