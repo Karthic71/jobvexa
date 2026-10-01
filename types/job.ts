@@ -177,6 +177,7 @@ export interface SourceStatus {
   budgetToday?: number;
   usedToday?: number;
   lastSuccess?: string;
+  lastError?: { at: string; message: string };
 }
 
 export interface SourceInfo {

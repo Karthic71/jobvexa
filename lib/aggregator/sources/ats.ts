@@ -45,7 +45,7 @@ async function many<T>(ids: string[], fn: (id: string) => Promise<T[]>): Promise
 export const greenhouse: SourceAdapter = {
   name: 'Greenhouse',
   source: 'greenhouse',
-  skipReason: () => (envList('GREENHOUSE_BOARDS').length ? null : 'GREENHOUSE_BOARDS not set'),
+  skipReason: () => (envList('GREENHOUSE_BOARDS').length ? null : 'Covered by ATS auto-discovery (optional extra list: GREENHOUSE_BOARDS)'),
   fetch: () => many(envList('GREENHOUSE_BOARDS'), async (b) => {
     const d = await fetchJson<{ jobs: { title: string; location?: { name: string }; absolute_url: string; updated_at: string; content?: string; departments?: { name: string }[] }[] }>(
       `https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(b)}/jobs?content=true`);
@@ -56,7 +56,7 @@ export const greenhouse: SourceAdapter = {
 export const lever: SourceAdapter = {
   name: 'Lever',
   source: 'lever',
-  skipReason: () => (envList('LEVER_COMPANIES').length ? null : 'LEVER_COMPANIES not set'),
+  skipReason: () => (envList('LEVER_COMPANIES').length ? null : 'Covered by ATS auto-discovery (optional extra list: LEVER_COMPANIES)'),
   fetch: () => many(envList('LEVER_COMPANIES'), async (c) => {
     const d = await fetchJson<{ text: string; categories?: { location?: string; commitment?: string; team?: string }; hostedUrl: string; createdAt: number; descriptionPlain?: string; workplaceType?: string }[]>(
       `https://api.lever.co/v0/postings/${encodeURIComponent(c)}?mode=json`);
@@ -67,7 +67,7 @@ export const lever: SourceAdapter = {
 export const ashby: SourceAdapter = {
   name: 'Ashby',
   source: 'ashby',
-  skipReason: () => (envList('ASHBY_BOARDS').length ? null : 'ASHBY_BOARDS not set'),
+  skipReason: () => (envList('ASHBY_BOARDS').length ? null : 'Covered by ATS auto-discovery (optional extra list: ASHBY_BOARDS)'),
   fetch: () => many(envList('ASHBY_BOARDS'), async (b) => {
     const d = await fetchJson<{ jobs: { title: string; location?: string; isRemote?: boolean; employmentType?: string; department?: string; publishedAt?: string; jobUrl: string; applyUrl?: string; descriptionPlain?: string }[] }>(
       `https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(b)}`);

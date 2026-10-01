@@ -10,6 +10,7 @@
 - Retries once on HTTP 429/502/503/504 (e.g. Adzuna 503) and error messages include the start of the server's reply.
 - Small daily quotas (JSearch 6/day) are spread smoothly over the day, and the coverage note says when the next call happens.
 - `MAX_JOBS` default raised to 15,000.
+- Coverage page: new **Jobs on site** column; the last error stays visible until a later call succeeds (a quiet run no longer hides it); clearer notes (“this hour's share is already used”, Greenhouse/Lever/Ashby “covered by ATS auto-discovery”, how to get free USAJobs/JSearch keys).
 
 ## 2026-09-30 — Keyword-driven collection & job-seeker features
 ### Data

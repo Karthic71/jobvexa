@@ -22,16 +22,20 @@ export default function CoveragePage() {
 
       <section className="card overflow-x-auto" aria-label="Sources">
         <table className="w-full text-left text-sm">
-          <thead className="text-xs text-muted"><tr><th className="p-3">Source</th><th className="p-3">Jobs this run</th><th className="p-3">Calls this run</th><th className="p-3">Used today / daily budget</th><th className="p-3">Last success</th><th className="p-3">Status</th></tr></thead>
+          <thead className="text-xs text-muted"><tr><th className="p-3">Source</th><th className="p-3">Jobs on site</th><th className="p-3">Jobs this run</th><th className="p-3">Calls this run</th><th className="p-3">Used today / daily budget</th><th className="p-3">Last success</th><th className="p-3">Status</th></tr></thead>
           <tbody>
             {c.sources.map((s) => (
               <tr key={s.source} className="border-t border-line">
                 <td className="p-3 font-medium">{s.source}</td>
+                <td className="p-3 tabular-nums">{s.jobsOnSite !== undefined ? s.jobsOnSite.toLocaleString() : '—'}</td>
                 <td className="p-3 tabular-nums">{s.jobsThisRun.toLocaleString()}</td>
                 <td className="p-3 tabular-nums">{s.calls ?? '—'}</td>
                 <td className="p-3 tabular-nums">{s.budgetToday ? `${s.usedToday ?? 0} / ${s.budgetToday}` : '—'}</td>
                 <td className="p-3 text-muted">{s.lastSuccess ? freshness(s.lastSuccess) : '—'}</td>
-                <td className={`p-3 text-xs ${s.error ? 'text-bad' : s.ok ? 'text-good' : 'text-muted'}`}>{s.error ?? s.note ?? (s.ok ? 'ok' : '')}</td>
+                <td className={`p-3 text-xs ${s.error ? 'text-bad' : s.ok ? 'text-good' : 'text-muted'}`}>
+                  {s.error ?? s.note ?? (s.ok ? 'ok' : '')}
+                  {!s.error && s.lastError && <span className="mt-1 block text-bad">Last error ({freshness(s.lastError.at)}): {s.lastError.message}</span>}
+                </td>
               </tr>
             ))}
           </tbody>

@@ -198,3 +198,43 @@ test('collector writes coverage, keywords and alert feeds; jobs get keyword tags
     Object.assign(process.env, saved);
   }
 });
+
+test('coverage keeps the last error when a later run makes no calls, and shows jobs on site', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jobvexa-err-'));
+  const companies = join(dir, 'companies.txt');
+  writeFileSync(companies, '');
+  const saved = { ...process.env };
+  Object.assign(process.env, { ADZUNA_APP_ID: 'x', ADZUNA_APP_KEY: 'y', DAILY_CALLS_ADZUNA: '24', RUNS_PER_DAY: '24', COLLECT_GAP_SCALE: '0', STATE_FILE: join(dir, 'state.json'), USE_MOCK_DATA: '0', DISABLE_JOBBANK: 'true', DISABLE_REMOTIVE: 'true', DISABLE_HIMALAYAS: 'true' });
+  for (const k of ['RAPIDAPI_KEY', 'OPENWEBNINJA_API_KEY', 'JOOBLE_API_KEY', 'USAJOBS_API_KEY']) delete process.env[k];
+  const real = globalThis.fetch;
+  let fail = true;
+  globalThis.fetch = (async (input: string | URL) => {
+    const u = String(input);
+    if (u.includes('api.adzuna.com')) return fail ? new Response('<html>Not Acceptable</html>', { status: 406, statusText: 'Not Acceptable' })
+      : new Response(JSON.stringify({ results: [{ title: 'Job A', description: 'x', redirect_url: 'https://www.adzuna.ca/land/ad/1', created: new Date().toISOString(), company: { display_name: 'Co' }, location: { area: ['Canada', 'Ontario', 'Toronto'] } }] }), { status: 200 });
+    return new Response('nf', { status: 404 });
+  }) as typeof fetch;
+  const cov = (d: string) => JSON.parse(readFileSync(join(dir, d, 'coverage.json'), 'utf8')).sources.find((s: { source: string }) => s.source === 'Adzuna');
+  try {
+    const t0 = Date.UTC(2026, 8, 29, 0, 5);
+    await main(join(dir, 'd1'), companies, t0);
+    assert.match(cov('d1').error, /406/);
+    await main(join(dir, 'd2'), companies, t0 + 30 * 60_000); // same hour: no calls left
+    const c2 = cov('d2');
+    assert.equal(c2.calls, 0);
+    assert.equal(c2.error, undefined);
+    assert.match(c2.lastError.message, /406 Not Acceptable/, 'earlier error still shown');
+    assert.match(c2.note, /this hour's share/);
+    fail = false;
+    await main(join(dir, 'd3'), companies, t0 + 60 * 60_000); // next hour succeeds
+    const c3 = cov('d3');
+    assert.equal(c3.lastError, undefined, 'cleared after a success');
+    assert.equal(c3.jobsOnSite, 1);
+    const gh = JSON.parse(readFileSync(join(dir, 'd3', 'coverage.json'), 'utf8')).sources.find((s: { source: string }) => s.source === 'Greenhouse');
+    assert.match(gh.note, /Covered by ATS auto-discovery/);
+  } finally {
+    globalThis.fetch = real;
+    for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
+    Object.assign(process.env, saved);
+  }
+});

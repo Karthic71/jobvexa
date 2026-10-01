@@ -29,7 +29,7 @@ export const loadKeywords = () => load<KeywordConfig>('keywords.json').catch(() 
 export interface Coverage {
   updatedAt: string; runSeconds: number;
   totals: { jobs: number; canada: number; fetchedThisRun: number };
-  sources: { source: string; ok: boolean; jobsThisRun: number; calls?: number; budgetToday?: number; usedToday?: number; lastSuccess?: string; error?: string; note?: string }[];
+  sources: { source: string; ok: boolean; jobsThisRun: number; jobsOnSite?: number; lastError?: { at: string; message: string }; calls?: number; budgetToday?: number; usedToday?: number; lastSuccess?: string; error?: string; note?: string }[];
   keywords: { keyword: string; tier: 'priority' | 'general'; jobsNow: number; canada: number; callsThisRun: number; fetchedThisRun: number; thin: boolean }[];
 }
 export const loadCoverage = () => load<Coverage>('coverage.json');

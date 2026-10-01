@@ -23,7 +23,7 @@ interface UsaJobsItem {
 export const usajobs: SourceAdapter = {
   name: 'USAJobs',
   source: 'usajobs',
-  skipReason: () => (env('USAJOBS_API_KEY') && env('USAJOBS_USER_AGENT') ? null : 'USAJOBS_API_KEY / USAJOBS_USER_AGENT not set'),
+  skipReason: () => (env('USAJOBS_API_KEY') && env('USAJOBS_USER_AGENT') ? null : 'Needs a free key: add secrets USAJOBS_API_KEY + USAJOBS_USER_AGENT (your email) — developer.usajobs.gov'),
   async fetch(p) {
     if (p.country === 'CA') return [];
     const qs = new URLSearchParams({ ResultsPerPage: '50', Fields: 'Full' });

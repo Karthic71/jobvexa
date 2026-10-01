@@ -13,7 +13,7 @@
 import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { JobListing, JobsSnapshot, SearchParams, SourceStatus, SourcesSnapshot, StatsSnapshot } from '@/types/job';
-import { BOARD_ADAPTERS, FEED_ADAPTERS, SEARCH_ADAPTERS, atsDiscovery, dedupe, listSources, runAdapter } from '@/lib/aggregator';
+import { ADAPTERS, BOARD_ADAPTERS, FEED_ADAPTERS, SEARCH_ADAPTERS, atsDiscovery, dedupe, listSources, runAdapter } from '@/lib/aggregator';
 import { discoverCompany, fetchBoard, type BoardRef } from '@/lib/aggregator/sources/discovery';
 import { jobBankRobots } from '@/lib/aggregator/sources/jobbank';
 import { EMPTY_KEYWORDS, parseKeywordsFile, tagJob, type KeywordConfig } from '@/lib/aggregator/keywords';
@@ -140,6 +140,8 @@ export interface CollectorState {
   lastSuccess?: Record<string, string>;
   /** feed source → last time it was called */
   lastRun?: Record<string, string>;
+  /** source → most recent error, kept until a later call succeeds (so a quiet run still shows it) */
+  lastError?: Record<string, { at: string; message: string }>;
 }
 const emptyState = (): CollectorState => ({ version: 1, jobs: [], boards: {}, cursor: {}, usage: {} });
 
@@ -204,7 +206,7 @@ async function runSearchAdapter(a: SourceAdapter, lanes: Record<string, SearchPa
     status: {
       source: a.name, ok, count: jobs.length, ms: Date.now() - t0,
       calls: made, budgetToday: dailyBudget()[a.name] ?? 24, usedToday: u.used + made,
-      ...(steps.length ? {} : { skipped: u.used + made >= (dailyBudget()[a.name] ?? 24) ? 'daily budget used — resumes tomorrow (UTC)' : `small daily quota is spread over the day — next call in about ${hoursUntilNextCall(dailyBudget()[a.name] ?? 24, u.used, now, runs)} h` }),
+      ...(steps.length ? {} : { skipped: u.used + made >= (dailyBudget()[a.name] ?? 24) ? 'daily budget used — resumes tomorrow (UTC)' : `this hour's share of the daily budget is already used — next call in about ${hoursUntilNextCall(dailyBudget()[a.name] ?? 24, u.used, now, runs)} h` }),
       ...(errors ? { error: `${errors}/${made} calls failed: ${lastError}` } : {}),
     },
   };
@@ -283,7 +285,7 @@ export interface CoverageReport {
   updatedAt: string;
   runSeconds: number;
   totals: { jobs: number; canada: number; fetchedThisRun: number };
-  sources: { source: string; ok: boolean; jobsThisRun: number; calls?: number; budgetToday?: number; usedToday?: number; lastSuccess?: string; error?: string; note?: string }[];
+  sources: { source: string; ok: boolean; jobsThisRun: number; jobsOnSite?: number; lastError?: { at: string; message: string }; calls?: number; budgetToday?: number; usedToday?: number; lastSuccess?: string; error?: string; note?: string }[];
   keywords: { keyword: string; tier: 'priority' | 'general'; jobsNow: number; canada: number; callsThisRun: number; fetchedThisRun: number; thin: boolean }[];
 }
 
@@ -366,7 +368,17 @@ export async function main(OUT = DEFAULT_OUT, companiesFile?: string, now = Date
   for (const st of statuses) {
     if (st.ok && st.count > 0) (state.lastSuccess ??= {})[st.source] = new Date(now).toISOString();
     const ls = state.lastSuccess?.[st.source]; if (ls) st.lastSuccess = ls;
+    // Remember the latest error until a call succeeds, so a run that makes no calls still shows it.
+    if (st.error) (state.lastError ??= {})[st.source] = { at: new Date(now).toISOString(), message: st.error };
+    else if ((st.calls ?? 0) > 0 && st.ok && state.lastError) delete state.lastError[st.source];
+    else if (st.skipped && !st.calls && st.calls !== 0 && state.lastError) delete state.lastError[st.source]; // turned off / no key
+    const le = state.lastError?.[st.source];
+    if (le && !st.error) st.lastError = le;
   }
+  // Jobs currently on the site per source (a quiet run can fetch 0 while hundreds are still listed).
+  const BOARD_IDS = new Set(['greenhouse', 'lever', 'ashby', 'smartrecruiters', 'workable', 'recruitee']);
+  const idOf = new Map(ADAPTERS.map((a) => [a.name, a.source]));
+  const onSite = (name: string) => name === atsDiscovery.name ? jobs.filter((j) => BOARD_IDS.has(j.source)).length : jobs.filter((j) => j.source === idOf.get(name)).length;
 
   if (stateFile && !usedMock) {
     state.jobs = stored;
@@ -414,7 +426,7 @@ export async function main(OUT = DEFAULT_OUT, companiesFile?: string, now = Date
     updatedAt,
     runSeconds: Math.round((Date.now() - started) / 1000),
     totals: { jobs: jobs.length, canada: jobs.filter((j) => j.location.country === 'CA').length, fetchedThisRun: new Set(fresh.map((j) => j.id)).size },
-    sources: statuses.map((st) => ({ source: st.source, ok: st.ok, jobsThisRun: st.count, calls: st.calls, budgetToday: st.budgetToday, usedToday: st.usedToday, lastSuccess: st.lastSuccess, error: st.error, note: st.skipped })),
+    sources: statuses.map((st) => ({ source: st.source, ok: st.ok, jobsThisRun: st.count, jobsOnSite: onSite(st.source), calls: st.calls, budgetToday: st.budgetToday, usedToday: st.usedToday, lastSuccess: st.lastSuccess, error: st.error, lastError: st.lastError, note: st.skipped })),
     keywords: [...kw.priority.map((k) => ({ k, tier: 'priority' as const })), ...kw.general.map((k) => ({ k, tier: 'general' as const }))].map(({ k, tier }) => {
       const matching = jobs.filter((j) => j.tags?.includes(k));
       const st = kwStats.get(k);

@@ -117,7 +117,7 @@ async function jsearchCall(qs: URLSearchParams): Promise<JSearchJob[]> {
 export const jsearch: SourceAdapter = {
   name: 'JSearch',
   source: 'jsearch',
-  skipReason: () => (env('RAPIDAPI_KEY') || env('OPENWEBNINJA_API_KEY') ? null : 'OPENWEBNINJA_API_KEY or RAPIDAPI_KEY not set'),
+  skipReason: () => (env('RAPIDAPI_KEY') || env('OPENWEBNINJA_API_KEY') ? null : 'Needs a free key: add secret OPENWEBNINJA_API_KEY (openwebninja.com)'),
   async fetch(p) {
     const jobs: JobListing[] = [];
     const errors: unknown[] = [];
