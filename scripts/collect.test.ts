@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { allowance, buildPlan, main, mergeWithPrevious } from './collect';
+import { allowance, buildKeywordPlans, buildPlan, loadKeywords, main, mergeWithPrevious, rssFeed, splitCalls } from './collect';
 import { mockJobs } from '../lib/aggregator/sources/mock';
 
 test('plan covers every province before any US state', () => {
@@ -20,7 +20,7 @@ test('collector end to end with mocked sources writes the site data', async () =
   const companies = join(dir, 'companies.txt');
   writeFileSync(companies, '# test\nAcme Corp\nNobody Inc\n');
   const saved = { ...process.env };
-  Object.assign(process.env, { ADZUNA_APP_ID: 'x', ADZUNA_APP_KEY: 'y', DAILY_CALLS_ADZUNA: '2', RUNS_PER_DAY: '1', COLLECT_GAP_SCALE: '0', USE_MOCK_DATA: '0' });
+  Object.assign(process.env, { ADZUNA_APP_ID: 'x', ADZUNA_APP_KEY: 'y', DAILY_CALLS_ADZUNA: '2', RUNS_PER_DAY: '1', COLLECT_GAP_SCALE: '0', USE_MOCK_DATA: '0', DISABLE_JOBBANK: 'true' });
   for (const k of ['RAPIDAPI_KEY', 'JOOBLE_API_KEY', 'USAJOBS_API_KEY', 'JOBBANK_FEED_URL', 'GREENHOUSE_BOARDS', 'LEVER_COMPANIES', 'ASHBY_BOARDS']) delete process.env[k];
   const real = globalThis.fetch;
   const calls: string[] = [];
@@ -94,7 +94,7 @@ test('hourly runs rotate through the plan and remember state', async () => {
   const companies = join(dir, 'companies.txt');
   writeFileSync(companies, 'Acme Corp\n');
   const saved = { ...process.env };
-  Object.assign(process.env, { ADZUNA_APP_ID: 'x', ADZUNA_APP_KEY: 'y', DAILY_CALLS_ADZUNA: '48', RUNS_PER_DAY: '24', COLLECT_GAP_SCALE: '0', STATE_FILE: join(dir, 'state.json'), USE_MOCK_DATA: '0' });
+  Object.assign(process.env, { ADZUNA_APP_ID: 'x', ADZUNA_APP_KEY: 'y', DAILY_CALLS_ADZUNA: '48', RUNS_PER_DAY: '24', COLLECT_GAP_SCALE: '0', STATE_FILE: join(dir, 'state.json'), USE_MOCK_DATA: '0', DISABLE_JOBBANK: 'true' });
   const real = globalThis.fetch;
   const adzunaUrls: string[] = []; let boardMeta = 0, boardJobs = 0;
   globalThis.fetch = (async (input: string | URL) => {
@@ -110,14 +110,84 @@ test('hourly runs rotate through the plan and remember state', async () => {
     return new Response('nf', { status: 404 });
   }) as typeof fetch;
   try {
-    const r1 = await main(join(dir, 'd1'), companies);
-    const r2 = await main(join(dir, 'd2'), companies);
+    const t0 = Date.UTC(2026, 8, 29, 0, 30); // fixed time of day keeps the hourly allowance predictable
+    const r1 = await main(join(dir, 'd1'), companies, t0);
+    const r2 = await main(join(dir, 'd2'), companies, t0 + 3_600_000);
     assert.ok(adzunaUrls.length >= 2 && adzunaUrls.length <= 48);
     const key = (u: string) => { const x = new URL(u); return `${x.pathname}|${x.searchParams.get('where')}|${x.searchParams.get('what')}`; };
     assert.equal(new Set(adzunaUrls.map(key)).size, adzunaUrls.length, 'no search repeated while rotating');
     assert.ok(r2.jobs > r1.jobs, `run 2 keeps run 1 jobs (${r1.jobs} → ${r2.jobs})`);
     assert.equal(boardMeta, 1, 'company board looked up once, then remembered');
     assert.equal(boardJobs, 2, 'known board fetched every run');
+  } finally {
+    globalThis.fetch = real;
+    for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
+    Object.assign(process.env, saved);
+  }
+});
+
+test('keyword plans: priority keywords across Canada first, then cities, general, USA', () => {
+  const plans = buildKeywordPlans({ priority: ['soc analyst', 'devops engineer'], general: ['nurse'] });
+  assert.equal(plans.core.length, 2 * 3 + 2, '3 Canada-wide pages + remote per priority keyword');
+  assert.ok(plans.core.every((p) => p.country === 'CA'));
+  assert.equal(plans.core.at(-1)!.q, 'devops engineer remote');
+  const firstUS = plans.more.findIndex((p) => p.country === 'US');
+  assert.ok(plans.more.slice(0, firstUS).every((p) => p.country === 'CA'));
+  assert.ok(plans.more.some((p) => p.city === 'Toronto' && p.q === 'soc analyst'));
+  const cfg = loadKeywords(join(process.cwd(), 'config'));
+  assert.ok(cfg.priority.includes('soc analyst') && cfg.general.length > 5 && cfg.aliases['site reliability engineer'].includes('sre'));
+});
+
+test('calls are split between lanes by share and never exceed a lane', () => {
+  assert.deepEqual(splitCalls(10, [{ key: 'core', size: 50, share: 0.35 }, { key: 'more', size: 50, share: 0.25 }, { key: 'broad', size: 50, share: 0.4 }]), { core: 4, more: 2, broad: 4 });
+  assert.deepEqual(splitCalls(10, [{ key: 'core', size: 2, share: 0.35 }, { key: 'more', size: 0, share: 0.25 }, { key: 'broad', size: 50, share: 0.4 }]), { core: 2, broad: 8 });
+  assert.deepEqual(splitCalls(0, [{ key: 'core', size: 2, share: 1 }]), { core: 0 });
+});
+
+test('RSS feed is valid-looking XML with escaped text', () => {
+  const [j] = mockJobs();
+  const x = rssFeed('Jobvexa <SOC>', 'https://x/?set=soc', [{ ...j, title: 'A & B' }], 'https://x');
+  assert.match(x, /^<\?xml/);
+  assert.ok(x.includes('A &amp; B') && x.includes('Jobvexa &lt;SOC&gt;') && x.includes(`https://x/job/?id=${j.id}`));
+});
+
+test('collector writes coverage, keywords and alert feeds; jobs get keyword tags', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jobvexa-kw-'));
+  const cfgDir = join(dir, 'config');
+  const { mkdirSync } = await import('node:fs');
+  mkdirSync(cfgDir);
+  writeFileSync(join(cfgDir, 'keywords.txt'), '[priority]\nsoc analyst\n[general]\nnurse\n');
+  writeFileSync(join(cfgDir, 'aliases.json'), JSON.stringify({ 'soc analyst': ['security operations analyst'] }));
+  writeFileSync(join(cfgDir, 'companies.txt'), '');
+  const saved = { ...process.env };
+  Object.assign(process.env, { ADZUNA_APP_ID: 'x', ADZUNA_APP_KEY: 'y', DAILY_CALLS_ADZUNA: '10', RUNS_PER_DAY: '1', COLLECT_GAP_SCALE: '0', DISABLE_JOBBANK: 'true', USE_MOCK_DATA: '0', SITE_URL: 'https://karthic71.github.io/jobvexa' });
+  for (const k of ['RAPIDAPI_KEY', 'OPENWEBNINJA_API_KEY', 'JOOBLE_API_KEY', 'USAJOBS_API_KEY', 'STATE_FILE']) delete process.env[k];
+  const real = globalThis.fetch;
+  const whats: string[] = [];
+  globalThis.fetch = (async (input: string | URL) => {
+    const u = new URL(String(input));
+    if (u.hostname === 'api.adzuna.com') {
+      whats.push(u.searchParams.get('what') ?? '');
+      const n = whats.length;
+      return new Response(JSON.stringify({ results: [{ title: n % 2 ? 'Security Operations Analyst' : 'Registered Nurse', description: 'Monitor SIEM alerts. Must be a Canadian citizen.', redirect_url: `https://www.adzuna.ca/land/ad/${n}`, created: new Date().toISOString(), salary_max: 80000, company: { display_name: `Co ${n}` }, location: { area: ['Canada', 'Ontario', 'Toronto'] } }] }), { status: 200 });
+    }
+    return new Response('nf', { status: 404 });
+  }) as typeof fetch;
+  try {
+    await main(join(dir, 'out'), undefined, Date.UTC(2026, 8, 29, 0, 30), cfgDir);
+    assert.ok(whats.includes('soc analyst'), 'priority keyword searched');
+    const cov = JSON.parse(readFileSync(join(dir, 'out', 'coverage.json'), 'utf8'));
+    const soc = cov.keywords.find((k: { keyword: string }) => k.keyword === 'soc analyst');
+    assert.ok(soc.callsThisRun >= 1 && soc.jobsNow >= 1, 'alias "security operations analyst" counted for soc analyst');
+    assert.ok(cov.sources.find((s: { source: string }) => s.source === 'Adzuna').calls >= 1);
+    const snap = JSON.parse(readFileSync(join(dir, 'out', 'jobs.json'), 'utf8'));
+    const tagged = snap.jobs.find((j: { title: string }) => j.title === 'Security Operations Analyst');
+    assert.deepEqual(tagged.tags, ['soc analyst']);
+    assert.deepEqual(tagged.auth, ['citizenship']);
+    assert.equal(tagged.salaryYearlyCad, 80000);
+    const feed = readFileSync(join(dir, 'out', 'feeds', 'soc.xml'), 'utf8');
+    assert.ok(feed.includes('Security Operations Analyst') && feed.includes('https://karthic71.github.io/jobvexa/job/?id='));
+    assert.ok(JSON.parse(readFileSync(join(dir, 'out', 'keywords.json'), 'utf8')).priority.includes('soc analyst'));
   } finally {
     globalThis.fetch = real;
     for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];

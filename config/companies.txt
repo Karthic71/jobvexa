@@ -63,6 +63,7 @@ Vidyard
 ApplyBoard
 Sonder
 Ownr
+Creyos
 
 # --- USA (second priority; many also hire in Canada) ---
 GitLab
@@ -95,3 +96,116 @@ Discord
 Squarespace
 Elastic
 MongoDB
+
+# --- more Canadian employers (added Sept 2026) ---
+Bench
+Fullscript
+Tailscale
+Questrade
+Magnet Forensics
+Field Effect
+Absolute Software
+Clearco
+PolicyMe
+Jane App
+Procurify
+D-Wave
+1QBit
+Mojio
+Semios
+Zafin
+Bold Commerce
+Coconut Software
+Helcim
+Symend
+TouchBistro
+Untether AI
+Tenstorrent
+Kira Systems
+Vena Solutions
+Wealthica
+Workleap
+Unito
+Potloc
+Mirego
+Swift Medical
+Nudge Rewards
+Rewind
+Klue
+Replicant
+Coinsquare
+Mogo
+Paytm Labs
+Fable
+Humi
+Cognito Health
+Pocket Health
+Alayacare
+Carta Healthcare
+Wave Financial
+Ada Support
+Delphia
+Nymi
+Cyberark
+Rapid7
+Tenable
+Huntress
+Red Canary
+Expel
+Coalfire
+SentinelOne
+Sonrai Security
+Sysdig
+Aqua Security
+Snyk
+Bitwarden
+Dashlane
+Proofpoint
+
+# --- USA / remote-friendly employers that often hire in Canada ---
+Zapier
+Automattic
+Canonical
+Grafana Labs
+Sourcegraph
+PagerDuty
+Vercel
+Netlify
+Fastly
+DigitalOcean
+Render
+Supabase
+PlanetScale
+Temporal
+Docker
+JFrog
+CircleCI
+LaunchDarkly
+Postman
+Kong
+Mozilla
+Wikimedia Foundation
+Khan Academy
+Coursera
+GitHub
+HashiCorp
+Chainguard
+Teleport
+Tines
+Vanta
+Drata
+Wiz
+Abnormal Security
+Arctic Wolf
+Okta
+Rippling
+Gusto
+Deel
+Remote
+Oyster HR
+Doist
+Buffer
+Help Scout
+Close
+Hotjar
+Toptal

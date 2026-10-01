@@ -70,27 +70,67 @@ export const jooble: SourceAdapter = {
   },
 };
 
-/** JSearch (RapidAPI): Google for Jobs data, includes every portal a job is posted on. */
+/**
+ * JSearch (Google for Jobs data): lists every portal a job is posted on.
+ * Works with an OpenWeb Ninja key (OPENWEBNINJA_API_KEY, direct API) or a RapidAPI key (RAPIDAPI_KEY).
+ * RapidAPI stopped taking new JSearch subscriptions in Sept 2026 and the old /search path can 404,
+ * so each host's newer `search-v2` path is tried first and the working one is remembered.
+ */
+type JsHost = { name: string; urls: string[]; headers: () => Record<string, string> };
+const JS_HOSTS: JsHost[] = [
+  { name: 'OpenWeb Ninja', urls: ['https://api.openwebninja.com/jsearch/search-v2', 'https://api.openwebninja.com/jsearch/search'], headers: () => ({ 'x-api-key': env('OPENWEBNINJA_API_KEY') }) },
+  { name: 'RapidAPI', urls: ['https://jsearch.p.rapidapi.com/search-v2', 'https://jsearch.p.rapidapi.com/search'], headers: () => ({ 'X-RapidAPI-Key': env('RAPIDAPI_KEY'), 'X-RapidAPI-Host': 'jsearch.p.rapidapi.com' }) },
+];
+let jsWorking: { host: JsHost; url: string } | null = null;
+export const resetJSearch = () => { jsWorking = null; };
+const jsHosts = () => JS_HOSTS.filter((h) => (h.name === 'OpenWeb Ninja' ? env('OPENWEBNINJA_API_KEY') : env('RAPIDAPI_KEY')));
+
+/** Accepts `{data:[...]}`, `{data:{jobs:[...]}}` or `{jobs:[...]}`. */
+export function jsearchList(d: unknown): JSearchJob[] {
+  const o = (d ?? {}) as { data?: unknown; jobs?: unknown };
+  if (Array.isArray(o.data)) return o.data as JSearchJob[];
+  const inner = o.data as { jobs?: unknown; data?: unknown } | undefined;
+  if (inner && Array.isArray(inner.jobs)) return inner.jobs as JSearchJob[];
+  if (inner && Array.isArray(inner.data)) return inner.data as JSearchJob[];
+  if (Array.isArray(o.jobs)) return o.jobs as JSearchJob[];
+  return [];
+}
+
+async function jsearchCall(qs: URLSearchParams): Promise<JSearchJob[]> {
+  const tries = jsWorking ? [jsWorking] : jsHosts().flatMap((host) => host.urls.map((url) => ({ host, url })));
+  let lastErr: unknown = new Error('No JSearch key set');
+  for (const t of tries) {
+    const params = new URLSearchParams(qs);
+    if (t.url.endsWith('search-v2')) { params.delete('page'); params.delete('num_pages'); }
+    try {
+      const d = await fetchJson<unknown>(`${t.url}?${params}`, { headers: t.host.headers() });
+      jsWorking = t;
+      return jsearchList(d);
+    } catch (e) {
+      lastErr = new Error(`${t.host.name} ${t.url.split('/').pop()}: ${e instanceof Error ? e.message : e}`);
+      if (jsWorking) { jsWorking = null; }
+    }
+  }
+  throw lastErr;
+}
+
 export const jsearch: SourceAdapter = {
   name: 'JSearch',
   source: 'jsearch',
-  skipReason: () => (env('RAPIDAPI_KEY') ? null : 'RAPIDAPI_KEY not set'),
+  skipReason: () => (env('RAPIDAPI_KEY') || env('OPENWEBNINJA_API_KEY') ? null : 'OPENWEBNINJA_API_KEY or RAPIDAPI_KEY not set'),
   async fetch(p) {
     const jobs: JobListing[] = [];
     const errors: unknown[] = [];
     const countries: Country[] = p.country === 'ALL' ? ['CA', 'US'] : [p.country];
-    if (env('RAPIDAPI_KEY')) {
-      await Promise.all(countries.map(async (c) => {
-        try {
-          const where = [p.city, p.region && regionsFor(c)[p.region]].filter(Boolean).join(', ');
-          const query = [p.company || p.q || (p.industry !== 'all' ? p.industry.replace(/_/g, ' ') : 'jobs'), where && `in ${where}`].filter(Boolean).join(' ');
-          const qs = new URLSearchParams({ query, page: String(Math.max(1, p.page || 1)), num_pages: '1', country: c.toLowerCase() });
-          if (p.workType === 'remote') qs.set('work_from_home', 'true');
-          if (p.postedWithinDays) qs.set('date_posted', p.postedWithinDays <= 1 ? 'today' : p.postedWithinDays <= 3 ? '3days' : p.postedWithinDays <= 7 ? 'week' : 'month');
-          const data = await fetchJson<{ data?: JSearchJob[] }>(`https://jsearch.p.rapidapi.com/search?${qs}`, {
-            headers: { 'X-RapidAPI-Key': env('RAPIDAPI_KEY'), 'X-RapidAPI-Host': 'jsearch.p.rapidapi.com' },
-          });
-          for (const j of data.data ?? []) {
+    await Promise.all(countries.map(async (c) => {
+      try {
+        const where = [p.city, p.region && regionsFor(c)[p.region]].filter(Boolean).join(', ');
+        const query = [p.company || p.q || (p.industry !== 'all' ? p.industry.replace(/_/g, ' ') : 'jobs'), where && `in ${where}`].filter(Boolean).join(' ');
+        const qs = new URLSearchParams({ query, page: String(Math.max(1, p.page || 1)), num_pages: '1', country: c.toLowerCase() });
+        if (p.workType === 'remote') qs.set('work_from_home', 'true');
+        if (p.postedWithinDays) qs.set('date_posted', p.postedWithinDays <= 1 ? 'today' : p.postedWithinDays <= 3 ? '3days' : p.postedWithinDays <= 7 ? 'week' : 'month');
+        const list = await jsearchCall(qs);
+        for (const j of list) {
             const country: Country = (j.job_country ?? c).toUpperCase() === 'CA' ? 'CA' : 'US';
             const cur = (j.job_salary_currency ?? '').toUpperCase() === 'CAD' || country === 'CA' ? 'CAD' : 'USD';
             jobs.push(finalize({
@@ -115,9 +155,8 @@ export const jsearch: SourceAdapter = {
               postedAt: safeIso(j.job_posted_at_datetime_utc),
             }));
           }
-        } catch (e) { errors.push(e); }
-      }));
-    }
+      } catch (e) { errors.push(e); }
+    }));
     if (!jobs.length && errors.length) throw errors[0];
     return jobs;
   },

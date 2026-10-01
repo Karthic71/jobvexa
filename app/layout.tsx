@@ -20,7 +20,14 @@ const themeScript = `try{var t=localStorage.getItem('jobvexa.theme');if(t==='lig
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head><script dangerouslySetInnerHTML={{ __html: themeScript }} /></head>
+      <head>
+        {process.env.NODE_ENV === 'production' && (
+          // Static hosting can't send security headers, so the key ones are set here.
+          <meta httpEquiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests" />
+        )}
+        <meta name="referrer" content="strict-origin-when-cross-origin" />
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body>
         <div className="mx-auto max-w-7xl px-4 pb-16">
           <Header />
@@ -32,6 +39,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </p>
             <p>
               <Link href="/sources" className="hover:text-accent hover:underline">Sources &amp; how it works</Link> ·{' '}
+              <Link href="/coverage" className="hover:text-accent hover:underline">Coverage report</Link> ·{' '}
               <Link href="/terms" className="hover:text-accent hover:underline">Terms</Link> ·{' '}
               <Link href="/privacy" className="hover:text-accent hover:underline">Privacy</Link> ·{' '}
               <Link href="/attribution" className="hover:text-accent hover:underline">Data attribution</Link>

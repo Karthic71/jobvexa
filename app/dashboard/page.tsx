@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import type { DashboardStats } from '@/types/job';
 import { companyHref } from '@/components/JobCard';
 import { industryLabel } from '@/lib/aggregator/params';
-import { friendlyError, loadStats } from '@/lib/data';
+import { friendlyError, loadCoverage, loadStats, type Coverage } from '@/lib/data';
 
 const label = (s: string) => industryLabel(s).replace(/^\w/, (c) => c.toUpperCase());
 const money = (n: number | null) => (n ? `$${n.toLocaleString('en-CA')}` : '—');
@@ -74,6 +74,8 @@ export default function Dashboard() {
   const [country, setCountry] = useState<'ALL' | 'CA' | 'US'>('CA');
   const [s, setS] = useState<DashboardStats | null>(null);
   const [err, setErr] = useState('');
+  const [cov, setCov] = useState<Coverage | null>(null);
+  useEffect(() => { loadCoverage().then(setCov).catch(() => setCov(null)); }, []);
   useEffect(() => {
     let live = true;
     setS(null); setErr('');
@@ -111,6 +113,10 @@ export default function Dashboard() {
           </div>
           <section className="card p-4"><h2 className="mb-2 text-sm font-semibold">Postings per day (last 30 days)</h2><Trend data={s.perDay} /></section>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {cov && (
+              <Bars title="Target roles (priority keywords)" rows={cov.keywords.filter((k) => k.tier === 'priority').map((k) => ({ key: k.keyword, count: country === 'CA' ? k.canada : country === 'US' ? k.jobsNow - k.canada : k.jobsNow })).sort((a, b) => b.count - a.count)}
+                href={(k) => `/?q=${encodeURIComponent(`"${k}"`)}&country=${country}`} fmt={(k) => k} />
+            )}
             <Bars title="By industry" rows={s.byIndustry} href={(k) => `/?industry=${k}`} />
             <Bars title="By province / state" rows={s.byRegion} href={(k) => (/^[A-Z]{2}$/.test(k) ? `/?region=${k}` : null)} fmt={(k) => k} />
             <Bars title="Top cities" rows={s.byCity} href={(k) => (k === 'Remote' ? '/?workType=remote' : `/?city=${encodeURIComponent(k)}`)} fmt={(k) => k} />
@@ -131,7 +137,7 @@ export default function Dashboard() {
                   </li>
                 ))}
               </ul>
-              <Link href="/sources" className="mt-3 inline-block text-xs text-accent hover:underline">How to enable more sources →</Link>
+              <Link href="/coverage" className="mt-3 inline-block text-xs text-accent hover:underline">Full coverage report →</Link>
             </section>
           </div>
         </div>

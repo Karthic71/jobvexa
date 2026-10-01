@@ -1,0 +1,47 @@
+# Jobvexa search keywords — the collector searches every source for these.
+# One keyword per line. Order matters: earlier = searched more often.
+#
+# [priority]  searched most: Canada-wide (3 pages), Canada remote, 10 major Canadian cities, then USA + USA remote.
+# [general]   searched less: Canada-wide and USA page 1 (keeps the site useful for every industry).
+#
+# Add synonyms in config/aliases.json so a search for one finds the others.
+
+[priority]
+soc analyst
+cybersecurity analyst
+devops engineer
+site reliability engineer
+platform engineer
+cloud engineer
+aws engineer
+azure administrator
+cloud support
+systems administrator
+linux administrator
+virtualization engineer
+network administrator
+noc technician
+it support
+help desk
+
+[general]
+software developer
+data analyst
+business analyst
+project manager
+registered nurse
+personal support worker
+electrician
+mechanic
+truck driver
+warehouse associate
+customer service representative
+retail sales associate
+cook
+accountant
+administrative assistant
+teacher
+early childhood educator
+marketing coordinator
+security guard
+cleaner

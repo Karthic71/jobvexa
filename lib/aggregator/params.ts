@@ -1,4 +1,4 @@
-import type { EmploymentType, IndustryCategory, SearchParams, Seniority, WorkType } from '@/types/job';
+import type { EmploymentType, IndustryCategory, SearchParams, Seniority, WorkAuth, WorkType } from '@/types/job';
 
 export const INDUSTRIES: { value: IndustryCategory; label: string }[] = [
   { value: 'technology', label: 'Technology' },
@@ -17,7 +17,8 @@ export const industryLabel = (v: string) => INDUSTRIES.find((i) => i.value === v
 const IND = new Set<string>(INDUSTRIES.map((i) => i.value));
 const WT = new Set<string>(['remote', 'hybrid', 'onsite']);
 const ET = new Set<string>(['full-time', 'part-time', 'contract', 'internship', 'temporary']);
-const SORT = new Set<string>(['relevance', 'newest', 'oldest', 'salary', 'company']);
+const SORT = new Set<string>(['relevance', 'newest', 'oldest', 'salary', 'company', 'resume']);
+const AUTH = new Set<string>(['citizenship', 'pr-or-citizen', 'clearance', 'no-sponsorship', 'must-be-eligible']);
 const LEVEL = new Set<string>(['entry', 'mid', 'senior', 'lead', 'manager', 'executive']);
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const list = (v: string | null) => (v ?? '').split(',').map((x) => x.trim().slice(0, 40)).filter(Boolean).slice(0, 10);
@@ -51,6 +52,10 @@ export function parseSearchParams(sp: URLSearchParams): SearchParams {
     minSalary: num(sp.get('minSalary')),
     postedWithinDays: num(sp.get('days')),
     sort: SORT.has(sort) ? (sort as SearchParams['sort']) : 'relevance',
+    boost: list(sp.get('boost')).filter((l) => LEVEL.has(l)) as Seniority[],
+    hideAuth: list(sp.get('hide')).filter((a) => AUTH.has(a)) as WorkAuth[],
+    sponsorOnly: sp.get('sponsor') === '1',
+    hasSalary: sp.get('hasSalary') === '1',
     page: clamp(Math.floor(Number(sp.get('page')) || 1), 1, 1000),
     pageSize: clamp(Math.floor(Number(sp.get('pageSize')) || 25), 5, 100),
   };

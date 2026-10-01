@@ -3,7 +3,9 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import type { JobListing } from '@/types/job';
-import { companyHref, formatSalary, freshness, sourceLabel, timeAgo } from '@/components/JobCard';
+import { AUTH_LABEL, companyHref, formatSalary, freshness, sourceLabel, timeAgo } from '@/components/JobCard';
+import { matchScore } from '@/lib/aggregator/resume';
+import { STATUSES, useResume } from '@/components/useSaved';
 import { ApplyPanel, applyLabel, optionsFor } from '@/components/ApplyOptions';
 import { useApplied, useSaved } from '@/components/useSaved';
 import { buildDeepLinks } from '@/lib/aggregator/deeplinks';
@@ -21,7 +23,8 @@ function Body() {
   const [job, setJob] = useState<JobListing | null | undefined>(undefined);
   const [err, setErr] = useState('');
   const { saved, toggle } = useSaved();
-  const { mark } = useApplied();
+  const { mark, applied, update } = useApplied();
+  const { profile } = useResume();
 
   useEffect(() => {
     let live = true;
@@ -71,6 +74,7 @@ function Body() {
           {job.seniority && <span className="chip bg-muted/10 text-muted">{job.seniority} level</span>}
           <span className="chip bg-muted/10 text-muted">{industryLabel(job.industry)}</span>
           {salary && <span className="chip bg-good/10 text-good">{salary}</span>}
+          {job.auth?.map((a) => <span key={a} className={`chip ${a === 'sponsorship' ? 'bg-good/10 text-good' : a === 'must-be-eligible' ? 'bg-muted/10 text-muted' : 'bg-bad/10 text-bad'}`}>{AUTH_LABEL[a]}</span>)}
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           <a href={main.url} {...ext} onClick={() => mark(job, main.portal)} className="btn">{applyLabel(main)} ↗</a>
@@ -78,6 +82,26 @@ function Body() {
           <button className="btn-ghost" onClick={() => navigator.clipboard?.writeText(window.location.href)}>Copy link</button>
         </div>
         <p className="mt-3 text-xs text-muted">Posted {timeAgo(job.postedAt)} · via {sourceLabel(job.source)}{job.seenAt && <> · <span className="text-good">●</span> last confirmed at the source {freshness(job.seenAt)}</>}</p>
+
+        {applied[job.id] && (
+          <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
+            <label className="flex items-center gap-2">Application status
+              <select className="field !w-auto" value={applied[job.id].status ?? 'applied'} onChange={(e) => update(job.id, { status: e.target.value as (typeof STATUSES)[number] })}>
+                {STATUSES.map((s) => <option key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</option>)}
+              </select>
+            </label>
+            <Link href="/saved/?tab=applied" className="text-xs text-accent hover:underline">Open tracker</Link>
+          </div>
+        )}
+
+        {profile && (() => { const m = matchScore(job, profile); return (
+          <section className="mt-5 rounded-lg border border-line p-3 text-sm" aria-label="Resume match">
+            <p className="font-semibold">Resume match: <span className={m.score >= 60 ? 'text-good' : 'text-warn'}>{m.score}%</span></p>
+            {m.matched.length > 0 && <p className="mt-1 text-xs text-muted">You have: {m.matched.join(', ')}</p>}
+            {m.missing.length > 0 && <p className="mt-1 text-xs text-muted">Not on your resume (add if you have them): <span className="text-fg">{m.missing.join(', ')}</span></p>}
+            <Link href="/match/" className="mt-1 inline-block text-xs text-accent hover:underline">Update resume keywords</Link>
+          </section>
+        ); })()}
 
         <h2 className="mt-6 text-lg font-semibold">Job description</h2>
         <div className="mt-2 whitespace-pre-line text-sm leading-relaxed">{text}</div>

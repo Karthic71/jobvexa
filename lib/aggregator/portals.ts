@@ -19,6 +19,8 @@ const HOSTS: [RegExp, string, boolean][] = [
   [/(^|\.)dice\.com$/i, 'Dice', false],
   [/(^|\.)careerbuilder\.com$/i, 'CareerBuilder', false],
   [/(^|\.)wellfound\.com$/i, 'Wellfound', false],
+  [/(^|\.)remotive\.com$/i, 'Remotive', false],
+  [/(^|\.)himalayas\.app$/i, 'Himalayas', false],
   [/(^|\.)greenhouse\.io$/i, 'Company site (Greenhouse)', true],
   [/(^|\.)lever\.co$/i, 'Company site (Lever)', true],
   [/(^|\.)ashbyhq\.com$/i, 'Company site (Ashby)', true],
@@ -36,7 +38,8 @@ const HOSTS: [RegExp, string, boolean][] = [
 const SOURCE_PORTAL: Record<JobSource, string> = {
   canada_job_bank: 'Job Bank (Canada)', usajobs: 'USAJOBS', adzuna: 'Adzuna', jooble: 'Jooble', jsearch: 'Original posting',
   greenhouse: 'Company site (Greenhouse)', lever: 'Company site (Lever)', ashby: 'Company site (Ashby)',
-  smartrecruiters: 'Company site (SmartRecruiters)', deep_link: 'Original posting',
+  smartrecruiters: 'Company site (SmartRecruiters)', workable: 'Company site (Workable)', recruitee: 'Company site (Recruitee)',
+  remotive: 'Remotive', himalayas: 'Himalayas', deep_link: 'Original posting',
 };
 
 export function portalForUrl(url: string, fallback?: string): { portal: string; direct: boolean } {

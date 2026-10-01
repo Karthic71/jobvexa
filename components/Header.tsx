@@ -9,6 +9,7 @@ const NAV = [
   { href: '/', label: 'Search' },
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/saved', label: 'My jobs' },
+  { href: '/match', label: 'Resume match' },
   { href: '/sources', label: 'Sources' },
 ];
 

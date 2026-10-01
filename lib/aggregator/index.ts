@@ -11,16 +11,19 @@ import { jooble, jsearch } from './sources/jooble';
 import { SOURCE_META } from './sources/registry';
 import type { SourceAdapter } from './sources/types';
 import { usajobs } from './sources/usajobs';
+import { himalayas, remotive } from './sources/remote';
 
 export { generateJobFingerprint } from './fingerprint';
 export { buildDeepLinks } from './deeplinks';
 export { applyFilters, sortJobs, yearlyMax, querySnapshot } from './query';
 
 /** Adapters that are queried per country/region. */
-export const SEARCH_ADAPTERS: SourceAdapter[] = [jobBank, adzuna, jsearch, jooble, usajobs];
+export const SEARCH_ADAPTERS: SourceAdapter[] = [jobBank, adzuna, jsearch, jooble, usajobs, himalayas];
+/** Adapters that return a whole feed in one call, at most every few hours. */
+export const FEED_ADAPTERS: { adapter: SourceAdapter; everyHours: number }[] = [{ adapter: remotive, everyHours: 6 }];
 /** Adapters that return an employer's full board in one call. */
 export const BOARD_ADAPTERS: SourceAdapter[] = [greenhouse, lever, ashby, smartrecruiters];
-export const ADAPTERS: SourceAdapter[] = [...SEARCH_ADAPTERS, ...BOARD_ADAPTERS, atsDiscovery];
+export const ADAPTERS: SourceAdapter[] = [...SEARCH_ADAPTERS, ...FEED_ADAPTERS.map((f) => f.adapter), ...BOARD_ADAPTERS, atsDiscovery];
 export { atsDiscovery };
 
 /** Merge duplicates: keep the best source's data, combine every portal link, fill gaps from the others. */

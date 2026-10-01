@@ -6,7 +6,7 @@ import { env, type SourceAdapter } from './types';
 
 /**
  * ATS auto-discovery: when someone searches a company name (e.g. "Concentrix"),
- * try the public job-board endpoints of Greenhouse, Lever and Ashby
+ * try the public job-board endpoints of Greenhouse, Lever, Ashby, Workable and Recruitee
  * using slugs derived from that name. No configuration needed. (SmartRecruiters is opt-in only and excluded here.) Only public,
  * documented JSON endpoints are used. Misses are remembered for an hour. The collector remembers found boards between runs.
  */
@@ -37,12 +37,15 @@ const nameOk = (found: string | undefined, q: string) => {
   return s.every((t) => l.includes(t)); // whole-word match, so "acme" ≠ "acmecorp holdings"
 };
 
-export type Ats = 'greenhouse' | 'lever' | 'ashby';
+export type Ats = 'greenhouse' | 'lever' | 'ashby' | 'workable' | 'recruitee';
+export const ALL_ATS: Ats[] = ['greenhouse', 'lever', 'ashby', 'workable', 'recruitee'];
 /** A company's public job board: which system, its board slug, and the display name to use. */
 export interface BoardRef { ats: Ats; slug: string; name: string }
 
 type GhJob = { title: string; location?: { name: string }; absolute_url: string; updated_at: string; content?: string; departments?: { name: string }[] };
 type LvJob = { text: string; categories?: { location?: string; commitment?: string; team?: string }; hostedUrl: string; createdAt: number; descriptionPlain?: string; workplaceType?: string };
+type WkJob = { title: string; shortcode?: string; employment_type?: string; telecommuting?: boolean; department?: string; url?: string; shortlink?: string; application_url?: string; published_on?: string; created_at?: string; country?: string; city?: string; state?: string; description?: string; locations?: { country?: string; countryCode?: string; city?: string; region?: string }[] };
+type RcJob = { title: string; description?: string; requirements?: string; location?: string; city?: string; country?: string; country_code?: string; state_code?: string; state_name?: string; remote?: boolean; careers_url?: string; careers_apply_url?: string; published_at?: string; created_at?: string; employment_type_code?: string; department?: string; company_name?: string };
 type AbJob = { title: string; location?: string; isRemote?: boolean; employmentType?: string; department?: string; publishedAt?: string; jobUrl: string; applyUrl?: string; descriptionPlain?: string };
 
 const keep = (xs: (JobListing | null)[]) => xs.filter((x): x is JobListing => !!x);
@@ -69,6 +72,32 @@ export async function fetchBoard(ref: BoardRef, verifyName?: string): Promise<{ 
     if (!Array.isArray(d) || !d.length) return null;
     return { name: ref.name, jobs: keep(d.map((j) => buildFromAts('lever', ref.name, { title: j.text, location: j.categories?.location ?? '', remote: j.workplaceType === 'remote', type: j.categories?.commitment, dept: j.categories?.team, desc: j.descriptionPlain, url: j.hostedUrl, posted: j.createdAt }))) };
   }
+  if (ref.ats === 'workable') {
+    // Public careers-page widget API that Workable customers embed on their own sites.
+    const d = await fetchJson<{ name?: string; jobs?: WkJob[] }>(`https://apply.workable.com/api/v1/widget/accounts/${slug}?details=true`, {}, T);
+    if (!d.jobs) return null;
+    if (verifyName && !nameOk(d.name, verifyName)) return null;
+    const name = verifyName ? d.name ?? ref.name : ref.name;
+    return { name, jobs: keep(d.jobs.map((j) => {
+      const l = j.locations?.[0];
+      const location = [l?.city ?? j.city, l?.region ?? j.state, l?.countryCode ?? l?.country ?? j.country].filter(Boolean).join(', ');
+      return buildFromAts('workable', name, { title: j.title, location, remote: !!j.telecommuting, type: j.employment_type, dept: j.department, desc: j.description, url: j.application_url || j.url || j.shortlink || `https://apply.workable.com/${slug}/j/${j.shortcode}/`, posted: j.published_on || j.created_at });
+    })) };
+  }
+  if (ref.ats === 'recruitee') {
+    // Public careers-site API of Recruitee customers.
+    const d = await fetchJson<{ offers?: RcJob[] }>(`https://${slug}.recruitee.com/api/offers/`, {}, T);
+    if (!d.offers) return null;
+    const found = d.offers[0]?.company_name;
+    if (verifyName && d.offers.length && !nameOk(found, verifyName)) return null;
+    if (!d.offers.length) return verifyName ? null : { name: ref.name, jobs: [] };
+    const name = verifyName ? found ?? ref.name : ref.name;
+    return { name, jobs: keep(d.offers.map((j) => buildFromAts('recruitee', name, {
+      title: j.title, location: [j.city, j.state_code || j.state_name, j.country_code || j.country].filter(Boolean).join(', ') || j.location || '',
+      remote: !!j.remote, type: j.employment_type_code, dept: j.department, desc: `${j.description ?? ''}${j.requirements ?? ''}`,
+      url: j.careers_apply_url || j.careers_url || `https://${slug}.recruitee.com/`, posted: j.published_at || j.created_at,
+    }))) };
+  }
   const d = await fetchJson<{ jobs?: AbJob[] }>(`https://api.ashbyhq.com/posting-api/job-board/${slug}`, {}, T);
   if (!d.jobs?.length) return null;
   return { name: ref.name, jobs: keep(d.jobs.map((j) => buildFromAts('ashby', ref.name, { title: j.title, location: j.location ?? '', remote: j.isRemote, type: j.employmentType, dept: j.department, desc: j.descriptionPlain, url: j.applyUrl || j.jobUrl, posted: j.publishedAt }))) };
@@ -78,12 +107,12 @@ export async function fetchBoard(ref: BoardRef, verifyName?: string): Promise<{ 
 export async function discoverCompany(q: string): Promise<{ jobs: JobListing[]; boards: BoardRef[] }> {
   const slugs = slugCandidates(q);
   const found: { ref: BoardRef; jobs: JobListing[] }[] = [];
-  await Promise.all((['greenhouse', 'lever', 'ashby'] as Ats[]).map(async (ats) => {
+  await Promise.all(ALL_ATS.map(async (ats) => {
     for (const slug of slugs) {
       const k = `${ats}:${slug}`;
       if (missed(k)) continue;
       try {
-        const r = await fetchBoard({ ats, slug, name: q.trim() }, ats === 'greenhouse' ? q : undefined);
+        const r = await fetchBoard({ ats, slug, name: q.trim() }, ats === 'greenhouse' || ats === 'workable' || ats === 'recruitee' ? q : undefined);
         if (!r) { miss(k); continue; }
         found.push({ ref: { ats, slug, name: r.name }, jobs: r.jobs });
         return; // one board per ATS is enough

@@ -1,63 +1,110 @@
-import type { JobListing } from '@/types/job';
-import { classifyIndustry, htmlToText, fetchText, finalize, inferEmploymentType, inferWorkType, safeIso, snippet, stripHtml } from '../normalize';
-import { parseLocationString } from '../regions';
+import type { JobListing, SearchParams } from '@/types/job';
+import { classifyIndustry, fetchText, finalize, htmlToText, inferEmploymentType, inferWorkType, parseSalaryText, safeIso, snippet, stripHtml } from '../normalize';
+import { CA_PROVINCES, parseLocationString, toRegionCode } from '../regions';
+import { parseRobots } from '../robots';
 import { env, type SourceAdapter } from './types';
 
 /**
- * Canada Job Bank does not publish a single stable public search API, so this adapter
- * consumes a feed you configure via JOBBANK_FEED_URL. It accepts either:
- *   - RSS/Atom XML (<item> / <entry> with title, link, pubDate, description, optional <location>/<category>)
- *   - a JSON array of { title, employer, location, url, date, description, salary }
- * Query params {q} and {where} in the URL are substituted if present.
+ * Government of Canada Job Bank, read from its public job-search RSS feed.
+ * Job Bank content is published under the Open Government Licence – Canada (attribution on /attribution).
+ * Before any request, robots.txt is fetched and obeyed (paths and Crawl-delay). If robots.txt
+ * can't be read or disallows the feed, the connector does nothing.
+ *
+ * JOBBANK_FEED_URL can override the feed; placeholders {q}, {where}, {page} are filled in.
  */
+export const JOBBANK_ORIGIN = 'https://www.jobbank.gc.ca';
+const DEFAULT_FEED = `${JOBBANK_ORIGIN}/jobsearch/feed/jobSearchRSSfeed?searchstring={q}&locationstring={where}&sort=D&page={page}`;
+export const BOT_UA = 'JobvexaBot/1.0 (+https://github.com/Karthic71/jobvexa)';
+
+let robots: Promise<ReturnType<typeof parseRobots>> | null = null;
+/** robots.txt for the feed's site, fetched once per run. */
+export function jobBankRobots() {
+  robots ??= fetchText(`${new URL(feedTemplate()).origin}/robots.txt`, { headers: { 'User-Agent': BOT_UA } }, 10000).then((t) => parseRobots(t, 'JobvexaBot'));
+  robots.catch(() => { robots = null; });
+  return robots;
+}
+export const resetJobBankRobots = () => { robots = null; };
+
+const feedTemplate = () => env('JOBBANK_FEED_URL') || DEFAULT_FEED;
+
 function tag(block: string, name: string): string {
   const m = block.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`, 'i'));
-  return m ? stripHtml(m[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')) : '';
+  return m ? m[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim() : '';
+}
+const label = (text: string, ...names: string[]) => {
+  for (const n of names) {
+    const m = text.match(new RegExp(`(?:^|\\n|\\s)${n}\\s*[:\\-]\\s*([^\\n|]+)`, 'i'));
+    if (m) return m[1].trim();
+  }
+  return '';
+};
+
+/** Pull employer / location / salary out of a Job Bank RSS item, whatever layout it uses. */
+export function parseJobBankItem(block: string): { title: string; employer: string; location: string; salary: string; url: string; date: string; desc: string } | null {
+  let title = stripHtml(tag(block, 'title'));
+  const url = (stripHtml(tag(block, 'link')) || (block.match(/<link[^>]*href="([^"]+)"/i)?.[1] ?? '') || stripHtml(tag(block, 'guid'))).replace(/;jsessionid=[^?#]*/i, '');
+  if (!title || !/^https?:\/\//.test(url)) return null;
+  const descHtml = tag(block, 'description') || tag(block, 'summary');
+  const desc = htmlToText(descHtml);
+  let employer = stripHtml(tag(block, 'employer')) || label(desc, 'Employer', 'Company', 'Business');
+  let location = stripHtml(tag(block, 'location')) || label(desc, 'Location', 'Work location', 'Job location');
+  // Titles often look like "Cybersecurity analyst - Creyos - Toronto (ON)"
+  const parts = title.split(/\s+[-–|]\s+/);
+  if (parts.length >= 2) {
+    const last = parts[parts.length - 1];
+    if (!location && /\(([A-Z]{2})\)\s*$|,\s*[A-Z]{2}\s*$/.test(last)) { location = last; parts.pop(); }
+    if (!employer && parts.length >= 2) employer = parts.pop()!;
+    title = parts.join(' - ');
+  }
+  location = location.replace(/\s*\(([A-Z]{2})\)/, ', $1').trim();
+  const salary = label(desc, 'Salary', 'Wage', 'Pay');
+  return { title, employer, location, salary, url, date: stripHtml(tag(block, 'pubDate') || tag(block, 'updated') || tag(block, 'dc:date')), desc };
+}
+
+export function jobBankFeedUrl(p: SearchParams): string {
+  const region = p.region && CA_PROVINCES[p.region] ? CA_PROVINCES[p.region] : '';
+  const where = [p.city, region].filter(Boolean).join(', ');
+  return feedTemplate()
+    .replace('{q}', encodeURIComponent(p.q || p.company || ''))
+    .replace('{where}', encodeURIComponent(where))
+    .replace('{page}', String(Math.max(1, p.page || 1)));
 }
 
 export const jobBank: SourceAdapter = {
   name: 'Canada Job Bank',
   source: 'canada_job_bank',
-  skipReason: () => (env('JOBBANK_FEED_URL') ? null : 'JOBBANK_FEED_URL not set'),
+  skipReason: () => (env('DISABLE_JOBBANK') === 'true' ? 'Disabled (DISABLE_JOBBANK=true)' : null),
   async fetch(p) {
     if (p.country === 'US') return [];
-    const url = env('JOBBANK_FEED_URL')
-      .replace('{q}', encodeURIComponent(p.q))
-      .replace('{where}', encodeURIComponent([p.city, p.region].filter(Boolean).join(' ')));
-    const body = await fetchText(url, { headers: { Accept: 'application/json, application/rss+xml, application/xml' } });
-    const out: JobListing[] = [];
+    const url = jobBankFeedUrl(p);
+    const rules = await jobBankRobots();
+    const u = new URL(url);
+    if (!rules.allowed(u.pathname + u.search)) throw new Error('robots.txt does not allow this feed — skipped');
+    const body = await fetchText(url, { headers: { 'User-Agent': BOT_UA, Accept: 'application/rss+xml, application/xml, text/xml' } }, 15000);
+    if (!/<(rss|feed|channel)[\s>]/i.test(body)) throw new Error(`Job Bank did not return an RSS feed (starts: ${body.replace(/\s+/g, ' ').slice(0, 120)})`);
 
-    const push = (o: { title: string; employer?: string; location?: string; url: string; date?: string; desc?: string; cat?: string; sal?: string }) => {
-      if (!o.title || !o.url) return;
-      const l = parseLocationString(o.location ?? '', 'CA');
-      const text = `${o.title} ${o.desc ?? ''}`;
-      const nums = (o.sal ?? '').replace(/,/g, '').match(/\d+(\.\d+)?/g)?.map(Number) ?? [];
+    const out: JobListing[] = [];
+    for (const b of body.match(/<(item|entry)[\s>][\s\S]*?<\/(item|entry)>/gi) ?? []) {
+      const it = parseJobBankItem(b);
+      if (!it) continue;
+      const loc = parseLocationString(it.location, 'CA');
+      const region = loc.stateProvince || toRegionCode(p.region, 'CA');
+      const text = `${it.title} ${it.desc}`;
       out.push(finalize({
-        title: o.title,
-        company: o.employer ?? '',
-        location: { city: l.city, stateProvince: l.stateProvince, country: 'CA', isRemote: /remote/i.test(text) },
+        title: it.title,
+        company: it.employer,
+        location: { city: loc.city, stateProvince: region, country: 'CA', isRemote: /\bremote\b|work from home/i.test(text) },
         workType: inferWorkType(text),
         employmentType: inferEmploymentType(text),
-        industry: classifyIndustry(o.title, o.cat),
-        salary: nums.length ? { min: nums[0], max: nums[1] ?? nums[0], currency: 'CAD', period: Math.max(...nums) < 500 ? 'hourly' : 'yearly' } : undefined,
-        descriptionSnippet: snippet(o.desc),
-        description: htmlToText(o.desc),
-        applyUrl: o.url,
+        industry: classifyIndustry(it.title, it.desc),
+        salary: parseSalaryText(it.salary, 'CA'),
+        descriptionSnippet: snippet(it.desc),
+        description: it.desc || undefined,
+        applyUrl: it.url,
+        applyOptions: [{ portal: 'Job Bank (Canada)', url: it.url, direct: false }],
         source: 'canada_job_bank',
-        postedAt: safeIso(o.date),
+        postedAt: safeIso(it.date),
       }));
-    };
-
-    if (body.trim().startsWith('[') || body.trim().startsWith('{')) {
-      const j = JSON.parse(body);
-      const arr: Record<string, string>[] = Array.isArray(j) ? j : j.jobs ?? j.results ?? [];
-      for (const r of arr) push({ title: r.title, employer: r.employer ?? r.company, location: r.location, url: r.url ?? r.link, date: r.date ?? r.postedAt, desc: r.description, sal: r.salary });
-    } else {
-      const blocks = body.match(/<(item|entry)[\s>][\s\S]*?<\/(item|entry)>/gi) ?? [];
-      for (const b of blocks) {
-        const link = tag(b, 'link') || (b.match(/<link[^>]*href="([^"]+)"/i)?.[1] ?? '');
-        push({ title: tag(b, 'title'), employer: tag(b, 'employer') || tag(b, 'author'), location: tag(b, 'location'), url: link, date: tag(b, 'pubDate') || tag(b, 'updated'), desc: tag(b, 'description') || tag(b, 'summary'), cat: tag(b, 'category') });
-      }
     }
     return out;
   },

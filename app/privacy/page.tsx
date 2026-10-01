@@ -19,7 +19,8 @@ export default function Privacy() {
       <p>To make the site work, the following is saved in your browser’s local storage on your own device. It is never sent to our servers, and you can delete it any time by clearing site data:</p>
       <ul>
         <li>Your light/dark theme choice.</li>
-        <li>Jobs you save, and jobs you opened an application for (your “Applied” list).</li>
+        <li>Jobs you save, your application tracker (status and notes), and your saved searches.</li>
+        <li>If you use Resume match: the resume text you paste and the keywords found in it. It is analysed in your browser and never uploaded; use “Delete from this browser” to remove it.</li>
         <li>Your recent searches.</li>
       </ul>
 

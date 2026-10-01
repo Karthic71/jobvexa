@@ -59,6 +59,17 @@ export default function Sources() {
         </ul>
       </section>
 
+      <section className="card p-6" aria-labelledby="later">
+        <h2 id="later" className="text-lg font-semibold">Considered, not added (yet)</h2>
+        <dl className="mt-3 space-y-3 text-sm">
+          <div><dt className="font-semibold">GC Jobs (federal public service)</dt><dd className="text-muted">No public API or feed; covered by search links and by Job Bank, which carries many government postings.</dd></div>
+          <div><dt className="font-semibold">The Muse</dt><dd className="text-muted">Public API, but mostly US listings and no clear terms for republishing — left off until the terms are confirmed.</dd></div>
+          <div><dt className="font-semibold">Arbeitnow, We Work Remotely</dt><dd className="text-muted">Mostly European listings / unclear republishing terms.</dd></div>
+          <div><dt className="font-semibold">Provincial and city job boards</dt><dd className="text-muted">No machine-readable feeds found with clear terms; linked from the platform list below instead.</dd></div>
+        </dl>
+        <p className="mt-3 text-sm text-muted">See what each source contributed in the <Link href="/coverage" className="text-accent hover:underline">coverage report</Link>.</p>
+      </section>
+
       <section className="card p-6" aria-labelledby="closed">
         <h2 id="closed" className="text-lg font-semibold">Not indexed (and why)</h2>
         <dl className="mt-3 space-y-3 text-sm">

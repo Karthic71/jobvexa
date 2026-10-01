@@ -2,18 +2,22 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { JobListing, JobsSnapshot, SearchResponse } from '@/types/job';
-import { friendlyError, loadJobs } from '@/lib/data';
+import { BASE_PATH, friendlyError, loadJobs, loadKeywords } from '@/lib/data';
+import type { KeywordConfig } from '@/lib/aggregator/keywords';
+import { buildMatcher } from '@/lib/aggregator/search';
+import { DEFAULT_SETS, setQuery } from '@/lib/aggregator/presets';
+import { matchScore } from '@/lib/aggregator/resume';
 import { querySnapshot } from '@/lib/aggregator/query';
 import { INDUSTRIES, parseSearchParams } from '@/lib/aggregator/params';
 import { CA_PROVINCES, US_STATES } from '@/lib/aggregator/regions';
 import JobCard, { companyHref, freshness } from './JobCard';
 import { resolveCareerSite } from '@/lib/aggregator/companies';
-import { useSaved } from './useSaved';
+import { markSeen, readSeen, useResume, useSaved, useSavedSets } from './useSaved';
 
 const DEFAULTS = {
   q: '', country: 'ALL', region: '', city: '', industry: 'all', workType: 'all', employmentType: 'all', company: '',
   minSalary: '', maxSalary: '', days: '', from: '', to: '', level: 'all', skills: '', certs: '', tools: '',
-  sort: 'relevance', pageSize: '25', inf: '',
+  sort: 'relevance', pageSize: '25', inf: '', boost: '', hide: '', sponsor: '', hasSalary: '', set: '',
 };
 type Filters = typeof DEFAULTS;
 
@@ -24,7 +28,7 @@ const PRESETS: [string, string][] = [
 
 const csv = (s: string) => s.split(',').filter(Boolean);
 const RECENT_KEY = 'jobvexa.recent.v1';
-const SUGGEST = ['SOC analyst', 'nurse', 'electrician', 'software developer', 'accountant', 'customer service', 'warehouse', 'cook', 'teacher', 'security guard', 'truck driver', 'remote'];
+const SUGGEST = ['"soc analyst" OR "security analyst"', 'devops -senior', 'cloud engineer', 'help desk', 'SOC analyst', 'nurse', 'electrician', 'software developer', 'accountant', 'customer service', 'warehouse', 'cook', 'teacher', 'security guard', 'truck driver', 'remote'];
 
 export default function JobSearch() {
   const [f, setF] = useState<Filters>(DEFAULTS);
@@ -41,12 +45,22 @@ export default function JobSearch() {
   const [focus, setFocus] = useState(false);
   const [recent, setRecent] = useState<{ q: string; city: string; hits?: number }[]>([]);
   const sentinel = useRef<HTMLDivElement>(null);
+  const [kw, setKw] = useState<KeywordConfig | undefined>(undefined);
+  const { profile } = useResume();
+  const { sets: userSets, add: addSet, remove: removeSet } = useSavedSets();
+  const [seen, setSeen] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [setName, setSetName] = useState('');
+  useEffect(() => { loadKeywords().then(setKw); setSeen(readSeen()); }, []);
 
   // Restore filters from the URL (shareable searches).
   useEffect(() => {
     const sp = new URLSearchParams(window.location.search);
-    setF((p) => ({ ...p, ...Object.fromEntries([...sp.entries()].filter(([k]) => k in DEFAULTS)) }));
-    setDraft({ q: sp.get('q') ?? '', city: sp.get('city') ?? '' });
+    const fromUrl = Object.fromEntries([...sp.entries()].filter(([k]) => k in DEFAULTS));
+    const preset = DEFAULT_SETS.find((s) => s.id === sp.get('set'));
+    if (preset && !fromUrl.q) { fromUrl.q = setQuery(preset); fromUrl.boost = (preset.boost ?? []).join(','); markSeen(preset.id); }
+    setF((p) => ({ ...p, ...fromUrl }));
+    setDraft({ q: fromUrl.q ?? '', city: sp.get('city') ?? '' });
     try { setRecent(JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]')); } catch { /* ignore */ }
     setReady(true);
   }, []);
@@ -66,7 +80,7 @@ export default function JobSearch() {
   useEffect(() => {
     if (!ready || !snap) return;
     const sp = new URLSearchParams(query); sp.delete('inf'); sp.set('page', String(page));
-    const json = querySnapshot(snap, parseSearchParams(sp));
+    const json = querySnapshot(snap, parseSearchParams(sp), kw, profile ?? undefined);
     setMeta(json); setError(''); setLoading(false);
     setJobs((prev) => (f.inf && page > 1 ? [...prev, ...json.jobs.filter((j) => !prev.some((p) => p.id === j.id))] : json.jobs));
     if (page === 1 && f.q) {
@@ -77,7 +91,7 @@ export default function JobSearch() {
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, page, ready, snap]);
+  }, [query, page, ready, snap, kw, profile]);
 
   useEffect(() => {
     if (ready) window.history.replaceState(null, '', query.toString() ? `?${query}` : window.location.pathname);
@@ -105,7 +119,7 @@ export default function JobSearch() {
   const run = (q: string, city: string) => {
     const query = q.trim(), c = city.trim();
     setDraft({ q: query, city: c });
-    setF((p) => ({ ...p, q: query, city: c, company: '' }));
+    setF((p) => ({ ...p, q: query, city: c, company: '', set: '' }));
     setPage(1); setFocus(false);
     if (query) {
       setRecent((r) => {
@@ -115,6 +129,42 @@ export default function JobSearch() {
       });
     }
   };
+  // Keyword sets: ready-made (SOC, DevOps, Cloud, IT support) + the user's own saved searches.
+  const allSets = useMemo(() => [
+    ...DEFAULT_SETS.map((s) => ({ id: s.id, name: s.name, query: setQuery(s), boost: (s.boost ?? []).join(','), builtin: true })),
+    ...Object.values(userSets).map((s) => ({ id: s.id, name: s.name, query: s.query, boost: '', builtin: false })),
+  ], [userSets]);
+  const newCounts = useMemo(() => {
+    if (!snap) return {} as Record<string, number>;
+    const out: Record<string, number> = {};
+    for (const s of allSets) {
+      const since = seen[s.id];
+      if (!since) continue;
+      const q = s.query.startsWith('?') ? new URLSearchParams(s.query.slice(1)).get('q') ?? '' : s.query;
+      const m = buildMatcher(q, kw);
+      const t = new Date(since).getTime();
+      out[s.id] = snap.jobs.filter((j) => new Date(j.postedAt).getTime() > t && m.test(j)).length;
+    }
+    return out;
+  }, [snap, allSets, seen, kw]);
+  const openSet = (s: { id: string; query: string; boost: string; builtin: boolean }) => {
+    if (s.builtin) {
+      setDraft({ q: s.query, city: draft.city });
+      setF((p) => ({ ...p, q: s.query, boost: s.boost, set: s.id, company: '' }));
+    } else {
+      const sp = new URLSearchParams(s.query.startsWith('?') ? s.query.slice(1) : `q=${encodeURIComponent(s.query)}`);
+      setF({ ...DEFAULTS, ...Object.fromEntries([...sp.entries()].filter(([k]) => k in DEFAULTS)), set: s.id });
+      setDraft({ q: sp.get('q') ?? '', city: sp.get('city') ?? '' });
+    }
+    setPage(1); markSeen(s.id); setSeen(readSeen());
+  };
+  const saveCurrent = () => {
+    const name = setName.trim() || f.q || 'My search';
+    const sp = new URLSearchParams(query); sp.delete('set'); sp.delete('inf');
+    const id = addSet(name, `?${sp}`);
+    markSeen(id); setSeen(readSeen()); setSaving(false); setSetName('');
+  };
+
   const clearRecent = () => { setRecent([]); try { localStorage.removeItem(RECENT_KEY); } catch { /* ignore */ } };
 
   // Canada first: provinces/territories, then US states.
@@ -128,7 +178,7 @@ export default function JobSearch() {
     <div>
       <form onSubmit={(e) => { e.preventDefault(); run(draft.q, draft.city); (document.activeElement as HTMLElement | null)?.blur?.(); }} className="mb-3 flex flex-col gap-2 sm:flex-row" role="search">
         <div className="relative flex-1">
-          <input className="field pr-9" placeholder="Job title, skill or company (try “Shopify” or “TP Canada”)" aria-label="Keywords" autoComplete="off"
+          <input className="field pr-9" placeholder='Job title, skill or company — try "soc analyst" OR sre -senior' aria-label="Keywords" autoComplete="off"
             value={draft.q} onChange={(e) => setDraft((d) => ({ ...d, q: e.target.value }))} onFocus={() => setFocus(true)} onBlur={() => setTimeout(() => setFocus(false), 150)} />
           {draft.q && <button type="button" aria-label="Clear search" onClick={() => run('', draft.city)} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-fg">✕</button>}
           {focus && (
@@ -153,7 +203,30 @@ export default function JobSearch() {
         <input className="field sm:max-w-[14rem]" placeholder="City" aria-label="City" value={draft.city} onChange={(e) => setDraft((d) => ({ ...d, city: e.target.value }))} />
         <button type="submit" className="btn px-6 py-2">Search</button>
       </form>
+      <section className="mb-3" aria-label="Keyword sets">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-muted">Job sets:</span>
+          {allSets.map((s) => (
+            <span key={s.id} className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 ${f.set === s.id ? 'border-accent bg-accent/15 text-accent' : 'border-line text-muted hover:text-fg'}`}>
+              <button type="button" onClick={() => openSet(s)}>{s.builtin ? '⭐ ' : ''}{s.name}</button>
+              {!!newCounts[s.id] && <span className="chip bg-good/15 text-good" title="New since you last opened this set">{newCounts[s.id]} new</span>}
+              {s.builtin && <a href={`${BASE_PATH}/data/feeds/${s.id}.xml`} title="RSS alert feed — add to any RSS reader" className="text-warn" target="_blank" rel="noopener noreferrer">RSS</a>}
+              {!s.builtin && <button type="button" aria-label={`Delete ${s.name}`} onClick={() => removeSet(s.id)} className="text-muted hover:text-bad">✕</button>}
+            </span>
+          ))}
+          {!saving ? (
+            <button type="button" onClick={() => { setSaving(true); setSetName(f.q); }} className="rounded-full border border-dashed border-line px-3 py-1 text-muted hover:text-accent">☆ Save this search</button>
+          ) : (
+            <form onSubmit={(e) => { e.preventDefault(); saveCurrent(); }} className="inline-flex items-center gap-1">
+              <input autoFocus aria-label="Name for this search" value={setName} onChange={(e) => setSetName(e.target.value)} placeholder="Name" className="field !w-40 !py-1 text-xs" />
+              <button type="submit" className="btn !py-1 text-xs">Save</button>
+              <button type="button" onClick={() => setSaving(false)} className="text-muted">Cancel</button>
+            </form>
+          )}
+        </div>
+      </section>
       <div className="mb-4 flex flex-wrap gap-2 text-xs" aria-label="Quick searches">
+        <span className="text-muted">Browse:</span>
         {PRESETS.map(([label, q]) => (
           <button key={q} type="button" onClick={() => run(q, draft.city)} className={`rounded-full border px-3 py-1 ${f.q === q ? 'border-accent text-accent' : 'border-line text-muted hover:text-fg'}`}>{label}</button>
         ))}
@@ -200,13 +273,23 @@ export default function JobSearch() {
             <label className="block text-xs text-muted">Min salary<input type="number" min={0} step={5000} className="field mt-1" placeholder="60000" value={f.minSalary} onChange={(e) => set('minSalary', e.target.value)} /></label>
             <label className="block text-xs text-muted">Max salary<input type="number" min={0} step={5000} className="field mt-1" placeholder="150000" value={f.maxSalary} onChange={(e) => set('maxSalary', e.target.value)} /></label>
           </div>
-          <p className="-mt-1 text-[11px] text-muted">Yearly equivalent (hourly × 2,080).</p>
+          <p className="-mt-1 text-[11px] text-muted">Yearly, in CAD (hourly × 2,080; USD converted approximately).</p>
+          <Check label="Only jobs that show a salary" on={!!f.hasSalary} set={(v) => set('hasSalary', v ? '1' : '')} />
+          <Check label="Entry & mid-level first" on={f.boost.includes('entry')} set={(v) => set('boost', v ? 'entry,mid' : '')} />
 
           <button onClick={() => setShowMore((s) => !s)} aria-expanded={showMore} className="btn-ghost w-full">{showMore ? '− Fewer options' : '+ More options'}</button>
           {showMore && (
             <div className="space-y-3">
               <Select label="Experience level" value={f.level} onChange={(v) => set('level', v)}
                 options={[['all', 'Any'], ...['entry', 'mid', 'senior', 'lead', 'manager', 'executive'].map((l) => [l, l[0].toUpperCase() + l.slice(1) + (meta?.facets.level[l] ? ` (${meta.facets.level[l]})` : '')] as [string, string])]} />
+              <fieldset className="space-y-1">
+                <legend className="mb-1 text-xs text-muted">Work authorization</legend>
+                {([['citizenship', 'Hide “citizens only” jobs'], ['pr-or-citizen', 'Hide “citizen or PR only” jobs'], ['clearance', 'Hide jobs needing security clearance'], ['no-sponsorship', 'Hide “no sponsorship” jobs']] as const).map(([k, l]) => (
+                  <Check key={k} label={l} on={csv(f.hide).includes(k)} set={(v) => set('hide', (v ? [...csv(f.hide), k] : csv(f.hide).filter((x) => x !== k)).join(','))} />
+                ))}
+                <Check label="Only jobs mentioning visa / LMIA sponsorship" on={!!f.sponsor} set={(v) => set('sponsor', v ? '1' : '')} />
+                <p className="text-[11px] text-muted">Detected from the posting text — always read the original listing.</p>
+              </fieldset>
               <TagPicker label="Certifications" selected={csv(f.certs)} options={meta?.facets.certs ?? {}} onToggle={(v) => toggleTag('certs', v)} />
               <TagPicker label="Tools" selected={csv(f.tools)} options={meta?.facets.tools ?? {}} onToggle={(v) => toggleTag('tools', v)} />
               <TagPicker label="Skills" selected={csv(f.skills)} options={meta?.facets.skills ?? {}} onToggle={(v) => toggleTag('skills', v)} />
@@ -244,7 +327,8 @@ export default function JobSearch() {
               <label className="flex items-center gap-1.5 text-xs"><input type="checkbox" checked={!!f.inf} onChange={(e) => { set('inf', e.target.checked ? '1' : ''); }} /> Infinite scroll</label>
               <select aria-label="Sort" className="field !w-auto" value={f.sort} onChange={(e) => set('sort', e.target.value)}>
                 <option value="relevance">Best match</option><option value="newest">Newest first</option><option value="oldest">Oldest first</option>
-                <option value="salary">Highest salary</option><option value="company">Company A–Z</option>
+                <option value="salary">Highest salary (CAD)</option><option value="company">Company A–Z</option>
+                {profile && <option value="resume">Best match for my resume</option>}
               </select>
               <select aria-label="Results per page" className="field !w-auto" value={f.pageSize} onChange={(e) => set('pageSize', e.target.value)}>
                 {['10', '25', '50', '100'].map((n) => <option key={n} value={n}>{n} / page</option>)}
@@ -255,7 +339,7 @@ export default function JobSearch() {
           {error && <div role="alert" className="card mb-3 border-bad/40 p-3 text-sm text-bad">{error}</div>}
 
           <div className={`grid gap-3 ${loading && jobs.length ? 'opacity-60' : ''}`}>
-            {jobs.map((j) => <JobCard key={j.id} job={j} saved={!!saved[j.id]} onToggleSave={toggle} />)}
+            {jobs.map((j) => <JobCard key={j.id} job={j} saved={!!saved[j.id]} onToggleSave={toggle} match={profile ? matchScore(j, profile).score : undefined} />)}
             {!loading && !jobs.length && meta && (
               <section className="card p-5" aria-label="No results">
                 <h2 className="font-semibold">{f.q || f.company ? `No listings for “${f.q || f.company}” in our connected sources yet` : 'No jobs match these filters'}</h2>
@@ -295,7 +379,7 @@ export default function JobSearch() {
               <div className="flex items-center justify-between gap-2">
                 <div>
                   <h2 className="text-sm font-semibold">Also search on {meta.deepLinks.length} job platforms{f.country === 'ALL' ? ' (Canada first, then USA)' : ''}</h2>
-                  <p className="text-xs text-muted">Each opens with your keyword, location and filters pre-filled. <Link href="/platforms" className="text-accent hover:underline">About these platforms</Link></p>
+                  <p className="text-xs text-muted">Each opens with your keyword, location and filters pre-filled. <Link href="/sources" className="text-accent hover:underline">About these platforms</Link></p>
                 </div>
                 <button className="btn-ghost" onClick={() => setShowLinks((s) => !s)} aria-expanded={showLinks}>{showLinks ? 'Hide' : 'Show all'}</button>
               </div>
@@ -334,5 +418,11 @@ function TagPicker({ label, selected, options, onToggle }: { label: string; sele
         ))}
       </div>
     </fieldset>
+  );
+}
+
+function Check({ label, on, set }: { label: string; on: boolean; set: (v: boolean) => void }) {
+  return (
+    <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={on} onChange={(e) => set(e.target.checked)} /> {label}</label>
   );
 }

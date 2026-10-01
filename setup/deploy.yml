@@ -24,9 +24,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -62,6 +62,7 @@ jobs:
           ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
           ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
           RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+          OPENWEBNINJA_API_KEY: ${{ secrets.OPENWEBNINJA_API_KEY }}
           JOOBLE_API_KEY: ${{ secrets.JOOBLE_API_KEY }}
           USAJOBS_API_KEY: ${{ secrets.USAJOBS_API_KEY }}
           USAJOBS_USER_AGENT: ${{ secrets.USAJOBS_USER_AGENT }}
@@ -73,6 +74,8 @@ jobs:
           ENABLE_SMARTRECRUITERS: ${{ vars.ENABLE_SMARTRECRUITERS }}
           SMARTRECRUITERS_COMPANIES: ${{ vars.SMARTRECRUITERS_COMPANIES }}
           DISABLE_ATS_DISCOVERY: ${{ vars.DISABLE_ATS_DISCOVERY }}
+          DISABLE_JOBBANK: ${{ vars.DISABLE_JOBBANK }}
+          DAILY_CALLS_JOBBANK: ${{ vars.DAILY_CALLS_JOBBANK }}
           DAILY_CALLS_ADZUNA: ${{ vars.DAILY_CALLS_ADZUNA }}
           DAILY_CALLS_JSEARCH: ${{ vars.DAILY_CALLS_JSEARCH }}
           DAILY_CALLS_JOOBLE: ${{ vars.DAILY_CALLS_JOOBLE }}
@@ -83,6 +86,7 @@ jobs:
           USE_MOCK_DATA: ${{ vars.USE_MOCK_DATA }}
           # If every source fails, keep what is live now instead of publishing an empty site.
           PREVIOUS_DATA_URL: ${{ steps.site.outputs.url }}/data/jobs.json
+          SITE_URL: ${{ steps.site.outputs.url }}
         run: npm run collect
 
       - name: Save data for the next run
@@ -99,8 +103,8 @@ jobs:
           NEXT_TELEMETRY_DISABLED: 1
         run: npm run build
 
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: out
 
@@ -112,7 +116,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
   keep-schedule-on:
     # GitHub pauses scheduled workflows after 60 days without commits. Re-enabling this workflow once a week keeps hourly updates running.

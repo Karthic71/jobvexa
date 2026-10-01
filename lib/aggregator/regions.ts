@@ -50,15 +50,23 @@ export function parseLocationString(
 ): { city: string; stateProvince: string; country: Country } {
   const parts = s.split(',').map((p) => p.trim()).filter(Boolean);
   let country: Country = hint ?? 'US';
-  for (const p of parts) {
-    if (/^(canada|ca)$/i.test(p)) country = 'CA';
-    if (/^(united states|usa|us)$/i.test(p)) country = 'US';
-  }
-  for (const p of parts) {
-    if (toRegionCode(p, 'CA')) { if (!hint || hint === 'CA') country = 'CA'; }
+  let explicit = false;
+  parts.forEach((p, i) => {
+    // "CA" is Canada only as a trailing country code ("Toronto, ON, CA"); "San Jose, CA" is California.
+    if (/^canada$/i.test(p) || (/^ca$/i.test(p) && i === parts.length - 1 && parts.length >= 3)) { country = 'CA'; explicit = true; }
+    if (/^(united states|united states of america|usa|us|u\.s\.)$/i.test(p)) { country = 'US'; explicit = true; }
+  });
+  if (!explicit) {
+    for (const p of parts.slice(1)) {
+      const isProvince = !!CA_PROVINCES[p.toUpperCase()] || !!toRegionCode(p, 'CA');
+      const isState = !!US_STATES[p.toUpperCase()] || !!toRegionCode(p, 'US');
+      if (isProvince && !isState) { country = 'CA'; break; }
+      if (isState && !isProvince) { country = 'US'; break; }
+    }
   }
   let region = '';
   for (const p of parts.slice(1)) {
+    if (explicit && parts.length >= 3 && p === parts[parts.length - 1]) continue; // skip the country code
     const r = toRegionCode(p, country);
     if (r) { region = r; break; }
   }

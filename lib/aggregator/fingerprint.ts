@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { normalizeCompany, normalizeToken } from './text';
+import { normalizeCompany, normalizeTitle, normalizeToken } from './text';
 
 export { normalizeCompany, normalizeToken };
 
@@ -14,7 +14,7 @@ export function generateJobFingerprint(input: {
   stateProvince: string;
 }): string {
   const key = [
-    normalizeToken(input.title),
+    normalizeTitle(input.title),
     normalizeCompany(input.company),
     normalizeToken(input.city),
     normalizeToken(input.stateProvince),

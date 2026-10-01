@@ -3,6 +3,9 @@ export type Country = 'CA' | 'US';
 export type WorkType = 'remote' | 'hybrid' | 'onsite';
 export type EmploymentType = 'full-time' | 'part-time' | 'contract' | 'internship' | 'temporary';
 
+/** Work-authorization signals found in the posting text. */
+export type WorkAuth = 'citizenship' | 'pr-or-citizen' | 'clearance' | 'no-sponsorship' | 'sponsorship' | 'must-be-eligible';
+
 export type Seniority = 'entry' | 'mid' | 'senior' | 'lead' | 'manager' | 'executive';
 
 export type IndustryCategory =
@@ -24,6 +27,10 @@ export type JobSource =
   | 'adzuna'
   | 'jooble'
   | 'jsearch'
+  | 'remotive'
+  | 'himalayas'
+  | 'workable'
+  | 'recruitee'
   | 'greenhouse'
   | 'lever'
   | 'ashby'
@@ -72,6 +79,12 @@ export interface JobListing {
   postedAt: string; // ISO String
   /** When the collector last saw this job at its source (ISO). */
   seenAt?: string;
+  /** Search keywords (from config/keywords.txt) this job matches, by title or description. */
+  tags?: string[];
+  /** Work-authorization requirements detected in the text. */
+  auth?: WorkAuth[];
+  /** Yearly-equivalent salary in CAD (USD converted at an approximate rate), for sorting. */
+  salaryYearlyCad?: number;
   isSaved?: boolean;
 }
 
@@ -93,7 +106,15 @@ export interface SearchParams {
   skills: string[];
   certs: string[];
   tools: string[];
-  sort: 'relevance' | 'newest' | 'oldest' | 'salary' | 'company';
+  sort: 'relevance' | 'newest' | 'oldest' | 'salary' | 'company' | 'resume';
+  /** Rank these experience levels higher (e.g. entry and mid first). */
+  boost?: Seniority[];
+  /** Hide jobs that mention these work-authorization requirements. */
+  hideAuth?: WorkAuth[];
+  /** Only jobs that mention visa/LMIA sponsorship. */
+  sponsorOnly?: boolean;
+  /** Only jobs that show a salary. */
+  hasSalary?: boolean;
   page: number;
   pageSize: number;
 }
@@ -152,6 +173,10 @@ export interface SourceStatus {
   skipped?: string;
   error?: string;
   ms: number;
+  calls?: number;
+  budgetToday?: number;
+  usedToday?: number;
+  lastSuccess?: string;
 }
 
 export interface SourceInfo {

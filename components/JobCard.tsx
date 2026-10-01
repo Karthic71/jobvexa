@@ -6,7 +6,7 @@ import { ApplyInline } from './ApplyOptions';
 
 const SOURCE_LABEL: Record<JobListing['source'], string> = {
   canada_job_bank: 'Job Bank', usajobs: 'USAJobs', adzuna: 'Adzuna', jooble: 'Jooble', jsearch: 'JSearch',
-  greenhouse: 'Greenhouse', lever: 'Lever', ashby: 'Ashby', smartrecruiters: 'SmartRecruiters', deep_link: 'Demo',
+  greenhouse: 'Greenhouse', lever: 'Lever', ashby: 'Ashby', smartrecruiters: 'SmartRecruiters', workable: 'Workable', recruitee: 'Recruitee', remotive: 'Remotive', himalayas: 'Himalayas', deep_link: 'Demo',
 };
 export const sourceLabel = (s: JobListing['source']) => SOURCE_LABEL[s];
 
@@ -27,18 +27,26 @@ export function freshness(iso: string): string {
 }
 
 export function timeAgo(iso: string): string {
-  const d = Math.floor((Date.now() - new Date(iso).getTime()) / 864e5);
-  if (d <= 0) return 'Today';
+  const ms = Date.now() - new Date(iso).getTime();
+  const h = Math.floor(ms / 3_600_000);
+  if (h < 1) return 'Just now';
+  if (h < 24) return `${h} hour${h === 1 ? '' : 's'} ago`;
+  const d = Math.floor(h / 24);
   if (d === 1) return 'Yesterday';
-  if (d < 30) return `${d}d ago`;
-  return `${Math.floor(d / 30)}mo ago`;
+  if (d < 30) return `${d} days ago`;
+  return `${Math.floor(d / 30)} mo ago`;
 }
+
+export const AUTH_LABEL: Record<string, string> = {
+  citizenship: 'Citizens only', 'pr-or-citizen': 'Citizen / PR only', clearance: 'Security clearance',
+  'no-sponsorship': 'No sponsorship', sponsorship: 'Sponsorship offered', 'must-be-eligible': 'Must be eligible to work',
+};
 
 export const jobHref = (j: Pick<JobListing, 'id' | 'title' | 'company'>) =>
   `/job/?id=${j.id}&t=${encodeURIComponent(j.title)}&c=${encodeURIComponent(j.company)}`;
 export const companyHref = (name: string) => `/company/?name=${encodeURIComponent(name)}`;
 
-export default function JobCard({ job, saved, onToggleSave }: { job: JobListing; saved: boolean; onToggleSave: (j: JobListing) => void }) {
+export default function JobCard({ job, saved, onToggleSave, match }: { job: JobListing; saved: boolean; onToggleSave: (j: JobListing) => void; match?: number }) {
   const salary = formatSalary(job.salary);
   const where = [job.location.city, job.location.stateProvince].filter(Boolean).join(', ') || job.location.country;
   return (
@@ -65,6 +73,8 @@ export default function JobCard({ job, saved, onToggleSave }: { job: JobListing;
         <span className="chip bg-muted/10 text-muted">{industryLabel(job.industry)}</span>
         {salary && <span className="chip bg-good/10 text-good">{salary}</span>}
         {job.certifications?.slice(0, 3).map((c) => <span key={c} className="chip bg-warn/10 text-warn">{c}</span>)}
+        {job.auth?.filter((a) => a !== 'must-be-eligible').map((a) => <span key={a} className={`chip ${a === 'sponsorship' ? 'bg-good/10 text-good' : 'bg-bad/10 text-bad'}`}>{AUTH_LABEL[a]}</span>)}
+        {match !== undefined && <span className={`chip ${match >= 60 ? 'bg-good/15 text-good' : 'bg-muted/10 text-muted'}`} title="How much of this job’s listed skills, tools and certifications your resume covers">Resume match {match}%</span>}
       </div>
       {job.descriptionSnippet && <p className="mt-2 line-clamp-2 text-sm text-muted">{job.descriptionSnippet}</p>}
       <div className="mt-3 flex flex-wrap items-end justify-between gap-2 text-xs text-muted">

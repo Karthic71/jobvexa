@@ -1,6 +1,7 @@
 import type { EmploymentType, IndustryCategory, JobListing, WorkType } from '@/types/job';
 import { generateJobFingerprint } from './fingerprint';
-import { CERTIFICATIONS, SKILLS, TOOLS, extract, inferSeniority } from './enrich';
+import { CERTIFICATIONS, SKILLS, TOOLS, detectWorkAuth, extract, inferSeniority } from './enrich';
+import { yearlyCad } from './salary';
 import { mergeApplyOptions, portalForSource, portalForUrl } from './portals';
 
 export function stripHtml(html: string | undefined | null): string {
@@ -85,6 +86,8 @@ export function finalize(j: Omit<JobListing, 'id'>): JobListing {
     ...j,
     applyOptions,
     applyUrl: applyOptions[0]?.url ?? j.applyUrl,
+    auth: j.auth ?? (detectWorkAuth(body).length ? detectWorkAuth(body) : undefined),
+    salaryYearlyCad: yearlyCad(j.salary),
     description: j.description ? j.description.slice(0, 20000) : undefined,
     seniority: j.seniority ?? inferSeniority(title, body),
     skills: j.skills ?? extract(SKILLS, body),
