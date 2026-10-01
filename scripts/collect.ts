@@ -54,8 +54,18 @@ const GAP_MS: Record<string, number> = { Adzuna: 2600, JSearch: 1200, Jooble: 12
 /** How many calls this run may make, given today's usage. */
 export function allowance(daily: number, usedToday: number, now: number, runsPerDay: number): number {
   const slot = Math.floor((now % 864e5) / (864e5 / runsPerDay)); // UTC slot of the day
-  const runsLeft = Math.max(1, runsPerDay - slot);
-  return Math.max(0, Math.floor(Math.max(0, daily - usedToday) / runsLeft));
+  // Spend evenly: by the end of slot s we may have used (s+1)/runs of the day's budget.
+  // Small budgets (e.g. 6/day) get one call every few hours; missed runs are caught up later.
+  const target = Math.floor(((slot + 1) * daily) / runsPerDay);
+  return Math.max(0, Math.min(daily, target) - usedToday);
+}
+
+/** Hours until a source with a small daily budget gets its next call. */
+export function hoursUntilNextCall(daily: number, usedToday: number, now: number, runsPerDay: number): number {
+  const slotH = 24 / runsPerDay;
+  const slot = Math.floor((now % 864e5) / (864e5 / runsPerDay));
+  for (let s = slot + 1; s < runsPerDay; s++) if (Math.floor(((s + 1) * daily) / runsPerDay) > usedToday) return Math.round((s - slot) * slotH);
+  return Math.round((runsPerDay - slot) * slotH);
 }
 
 const BASE: SearchParams = {
@@ -194,7 +204,7 @@ async function runSearchAdapter(a: SourceAdapter, lanes: Record<string, SearchPa
     status: {
       source: a.name, ok, count: jobs.length, ms: Date.now() - t0,
       calls: made, budgetToday: dailyBudget()[a.name] ?? 24, usedToday: u.used + made,
-      ...(steps.length ? {} : { skipped: 'daily budget used — resumes next run' }),
+      ...(steps.length ? {} : { skipped: u.used + made >= (dailyBudget()[a.name] ?? 24) ? 'daily budget used — resumes tomorrow (UTC)' : `small daily quota is spread over the day — next call in about ${hoursUntilNextCall(dailyBudget()[a.name] ?? 24, u.used, now, runs)} h` }),
       ...(errors ? { error: `${errors}/${made} calls failed: ${lastError}` } : {}),
     },
   };
@@ -317,7 +327,7 @@ export async function main(OUT = DEFAULT_OUT, companiesFile?: string, now = Date
   const lanes = { core, more, broad: plan };
   const kwStats = new Map<string, KeywordStat>();
   const MAX_AGE_DAYS = num('MAX_AGE_DAYS', 60);
-  const MAX_JOBS = num('MAX_JOBS', 12000); // keeps the download small enough for phones
+  const MAX_JOBS = num('MAX_JOBS', 15000); // keeps the download small enough for phones (Canada kept first)
   const usedMock = env('USE_MOCK_DATA') === '1' || process.argv.includes('--demo');
   const stateFile = env('STATE_FILE');
   const state = stateFile && !usedMock ? readState(stateFile) : emptyState();

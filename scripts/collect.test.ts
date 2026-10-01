@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { allowance, buildKeywordPlans, buildPlan, loadKeywords, main, mergeWithPrevious, rssFeed, splitCalls } from './collect';
+import { allowance, buildKeywordPlans, hoursUntilNextCall, buildPlan, loadKeywords, main, mergeWithPrevious, rssFeed, splitCalls } from './collect';
 import { mockJobs } from '../lib/aggregator/sources/mock';
 
 test('plan covers every province before any US state', () => {
@@ -72,6 +72,10 @@ test('daily budgets are spread across hourly runs and never exceeded', () => {
   for (let h = 0; h < 24; h++) used += allowance(6, used, day + h * 3_600_000 + 60_000, 24);
   assert.equal(used, 6, 'small quotas are used up by the end of the day, not exceeded');
   assert.equal(allowance(240, 240, day + 5 * 3_600_000, 24), 0);
+  // A 6/day quota makes no call in the first hour; the note says when the next one comes.
+  assert.equal(allowance(6, 0, day + 60_000, 24), 0);
+  assert.equal(hoursUntilNextCall(6, 0, day + 60_000, 24), 3);
+  assert.equal(allowance(6, 0, day + 3 * 3_600_000 + 60_000, 24), 1);
 });
 
 test('jobs carry over between runs and expire when no longer seen', () => {

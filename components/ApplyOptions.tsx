@@ -41,6 +41,7 @@ export function ApplyPanel({ job }: { job: JobListing }) {
   return (
     <section className="card p-4 text-sm" aria-labelledby="apply-h">
       <h2 id="apply-h" className="font-semibold">Where this job is posted</h2>
+      <p className="mb-1 text-xs"><a href="#ats" className="text-accent hover:underline">📄 Check your resume’s ATS score for this job first ↓</a></p>
       <p className="mb-3 text-xs text-muted">Found on {opts.length} {opts.length === 1 ? 'site' : 'sites'}. Applying on the employer’s own site is usually best. Links open the original posting in a new tab.</p>
       <ul className="space-y-2">
         {opts.map((o, i) => (

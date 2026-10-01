@@ -36,6 +36,7 @@ flowchart LR
 - **Where this job is posted** — every portal a job was found on (company site first) with an Apply button for each.
 - **Application tracker** — Applied → Interview → Offer / Rejected, notes, CSV export.
 - **Resume match** — paste your resume; it's analysed in the browser only. Match % on every job, what you have and what's missing, sort by best match.
+- **ATS check before you apply** — on every job page (and the “ATS check” link on each card): an ATS-style score out of 100 and a job-description match %, with a breakdown (hard skills & tools, keywords, job title, years of experience, education, readable formatting), the missing keywords to copy, and tips. Uses your saved resume automatically; scores show in the application tracker. Browser-only — nothing is uploaded.
 - **Dashboard** (Canada / USA): totals, 30-day trend, target roles, industries, provinces, cities, employers, skills, tools, certifications.
 - **Coverage report** — what each hourly run did: calls vs budget, last success per source, jobs per keyword, thin keywords.
 - Company pages, job pages, light/dark mode, Terms / Privacy / Data attribution.
@@ -57,7 +58,7 @@ flowchart LR
 
 Not indexed: LinkedIn, Indeed, Glassdoor (their terms forbid it) — every search has pre-filled links to them instead.
 
-Add keys at **Settings → Secrets and variables → Actions → New repository secret**. Optional *Variables* there: `DAILY_CALLS_ADZUNA` (240), `DAILY_CALLS_JSEARCH` (6), `DAILY_CALLS_JOOBLE` (100), `DAILY_CALLS_USAJOBS` (200), `DAILY_CALLS_JOBBANK` (240), `DAILY_CALLS_HIMALAYAS` (48), `MAX_JOBS` (12000), `DISABLE_JOBBANK` / `DISABLE_REMOTIVE` / `DISABLE_HIMALAYAS` / `DISABLE_ATS_DISCOVERY` (`true`).
+Add keys at **Settings → Secrets and variables → Actions → New repository secret**. Optional *Variables* there: `DAILY_CALLS_ADZUNA` (240), `DAILY_CALLS_JSEARCH` (6), `DAILY_CALLS_JOOBLE` (100), `DAILY_CALLS_USAJOBS` (200), `DAILY_CALLS_JOBBANK` (240), `DAILY_CALLS_HIMALAYAS` (48), `MAX_JOBS` (15000), `DISABLE_JOBBANK` / `DISABLE_REMOTIVE` / `DISABLE_HIMALAYAS` / `DISABLE_ATS_DISCOVERY` (`true`).
 
 ## Choosing what gets searched
 - **`config/keywords.txt`** — one keyword per line. `[priority]` keywords are searched most (Canada-wide 3 pages, Canada-remote, 10 big Canadian cities, then USA). `[general]` keywords keep every industry covered.
@@ -80,7 +81,7 @@ npm test               # unit + collector tests
 
 ## Project layout
 - `scripts/collect.ts` — hourly collector (keyword lanes, budgets, merge, coverage, RSS).
-- `lib/aggregator/` — sources, normalisation, fingerprint de-dupe, keywords/synonyms, search syntax, work-auth, salary, resume match, stats.
+- `lib/aggregator/` — sources, normalisation, fingerprint de-dupe, keywords/synonyms, search syntax, work-auth, salary, resume match, ATS check (`ats.ts`), stats.
 - `app/` — pages: `/`, `/job/?id=`, `/company/?name=`, `/dashboard`, `/saved` (My jobs & tracker), `/match`, `/coverage`, `/sources`, legal pages.
 - `setup/` — workflow files (`deploy.yml`, `screenshots.yml`, `dependabot.yml`) copied into `.github/` by the publish script.
 - `SECURITY.md` — threat model. `CHANGELOG.md` — what changed.

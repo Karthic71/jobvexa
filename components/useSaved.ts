@@ -114,3 +114,16 @@ export function useSavedSets() {
 const SEEN = 'jobvexa.seen.v1';
 export function readSeen(): Record<string, string> { try { return JSON.parse(localStorage.getItem(SEEN) ?? '{}'); } catch { return {}; } }
 export function markSeen(id: string) { const m = readSeen(); m[id] = new Date().toISOString(); try { localStorage.setItem(SEEN, JSON.stringify(m)); } catch { /* ignore */ } }
+
+/** Latest ATS check per job (score + JD match %), stored only in this browser. */
+const ATS = 'jobvexa.ats.v1', ATS_EVT = 'jobvexa:ats';
+export interface AtsResult { score: number; match: number; at: string }
+export function useAtsScores() {
+  const scores = useStore<AtsResult>(ATS, ATS_EVT);
+  const record = useCallback((id: string, score: number, match: number) => {
+    const cur = read<AtsResult>(ATS);
+    cur[id] = { score, match, at: new Date().toISOString() };
+    write(ATS, ATS_EVT, cur);
+  }, []);
+  return { scores, record };
+}

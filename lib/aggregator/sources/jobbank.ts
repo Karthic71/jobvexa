@@ -14,7 +14,8 @@ import { env, type SourceAdapter } from './types';
  */
 export const JOBBANK_ORIGIN = 'https://www.jobbank.gc.ca';
 const DEFAULT_FEED = `${JOBBANK_ORIGIN}/jobsearch/feed/jobSearchRSSfeed?searchstring={q}&locationstring={where}&sort=D&page={page}`;
-export const BOT_UA = 'JobvexaBot/1.0 (+https://github.com/Karthic71/jobvexa)';
+// Standard crawler format (like Googlebot): honest name + contact page.
+export const BOT_UA = 'Mozilla/5.0 (compatible; JobvexaBot/1.0; +https://github.com/Karthic71/jobvexa)';
 
 let robots: Promise<ReturnType<typeof parseRobots>> | null = null;
 /** robots.txt for the feed's site, fetched once per run. */
@@ -80,7 +81,8 @@ export const jobBank: SourceAdapter = {
     const rules = await jobBankRobots();
     const u = new URL(url);
     if (!rules.allowed(u.pathname + u.search)) throw new Error('robots.txt does not allow this feed — skipped');
-    const body = await fetchText(url, { headers: { 'User-Agent': BOT_UA, Accept: 'application/rss+xml, application/xml, text/xml' } }, 15000);
+    // Job Bank answered HTTP 406 to a narrow Accept header, so accept anything and check the body instead.
+    const body = await fetchText(url, { headers: { 'User-Agent': BOT_UA, Accept: '*/*', 'Accept-Language': 'en-CA,en;q=0.9' } }, 15000);
     if (!/<(rss|feed|channel)[\s>]/i.test(body)) throw new Error(`Job Bank did not return an RSS feed (starts: ${body.replace(/\s+/g, ' ').slice(0, 120)})`);
 
     const out: JobListing[] = [];

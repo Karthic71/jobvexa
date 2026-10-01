@@ -7,6 +7,7 @@ import { AUTH_LABEL, companyHref, formatSalary, freshness, sourceLabel, timeAgo 
 import { matchScore } from '@/lib/aggregator/resume';
 import { STATUSES, useResume } from '@/components/useSaved';
 import { ApplyPanel, applyLabel, optionsFor } from '@/components/ApplyOptions';
+import AtsPanel from '@/components/AtsPanel';
 import { useApplied, useSaved } from '@/components/useSaved';
 import { buildDeepLinks } from '@/lib/aggregator/deeplinks';
 import { resolveCareerSite } from '@/lib/aggregator/companies';
@@ -78,6 +79,7 @@ function Body() {
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           <a href={main.url} {...ext} onClick={() => mark(job, main.portal)} className="btn">{applyLabel(main)} ↗</a>
+          <a href="#ats" className="btn-ghost">📄 Check my resume (ATS score)</a>
           <button className="btn-ghost" onClick={() => toggle(job)} aria-pressed={!!saved[job.id]}>{saved[job.id] ? '★ Saved' : '☆ Save job'}</button>
           <button className="btn-ghost" onClick={() => navigator.clipboard?.writeText(window.location.href)}>Copy link</button>
         </div>
@@ -118,6 +120,7 @@ function Body() {
           </div>
         ) : null}
         <p className="mt-6 text-xs text-muted">Details such as skills, level and salary are extracted automatically and may be inaccurate. Always check the original posting.</p>
+        <AtsPanel job={job} />
       </article>
 
       <aside className="space-y-4">

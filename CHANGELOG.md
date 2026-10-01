@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-10-01 — ATS resume check & collector fixes
+### Website
+- **Check your resume for this job** — every job page now has an ATS-style score (0–100) and a job-description match %, with a score breakdown (hard skills & tools 40, keywords 15, job title 10, years of experience 10, education 5, readable formatting 20), ✓/✗ keyword chips, title/experience/education checks, a formatting checklist and tips. Paste your resume or a .txt file, or use your saved one (checked automatically). Short postings get a box to paste the full description. Runs in the browser only.
+- “ATS check” link on each job card and in the apply panel; ATS scores appear in the application tracker.
+
+### Data
+- Job Bank: fixed HTTP 406 (request now accepts any content type; standard crawler user agent).
+- Retries once on HTTP 429/502/503/504 (e.g. Adzuna 503) and error messages include the start of the server's reply.
+- Small daily quotas (JSearch 6/day) are spread smoothly over the day, and the coverage note says when the next call happens.
+- `MAX_JOBS` default raised to 15,000.
+
 ## 2026-09-30 — Keyword-driven collection & job-seeker features
 ### Data
 - **Keyword-driven collection** — `config/keywords.txt` (priority + general) and `config/aliases.json` (synonyms). Each hourly run splits every source's budget between priority keywords across Canada (3 pages + remote), keywords in 10 major Canadian cities / general keywords / USA, and the broad province/state sweep.

@@ -81,6 +81,7 @@ export default function JobCard({ job, saved, onToggleSave, match }: { job: JobL
         <span>{timeAgo(job.postedAt)} · via {SOURCE_LABEL[job.source]}</span>
         <span className="flex items-start gap-2">
           <Link href={jobHref(job)} className="btn-ghost">Details</Link>
+          <Link href={`${jobHref(job)}#ats`} className="btn-ghost" title="Check how well your resume matches this job">ATS check</Link>
           <ApplyInline job={job} />
         </span>
       </div>

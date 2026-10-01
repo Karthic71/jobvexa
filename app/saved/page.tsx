@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import JobCard, { jobHref } from '@/components/JobCard';
-import { STATUSES, trackerCsv, useApplied, useSaved, type AppStatus } from '@/components/useSaved';
+import { STATUSES, trackerCsv, useApplied, useAtsScores, useSaved, type AppStatus } from '@/components/useSaved';
 
 const STATUS_STYLE: Record<AppStatus, string> = {
   saved: 'bg-muted/10 text-muted', applied: 'bg-accent/15 text-accent', interview: 'bg-warn/15 text-warn',
@@ -18,6 +18,7 @@ function Body() {
   useEffect(() => { if (sp.get('tab') === 'applied') setTab('applied'); }, [sp]);
   const { saved, toggle } = useSaved();
   const { applied, unmark, update, mark } = useApplied();
+  const { scores } = useAtsScores();
   const list = Object.values(saved).sort((a, b) => +new Date(b.postedAt) - +new Date(a.postedAt));
   const all = Object.values(applied).sort((a, b) => +new Date(b.updatedAt ?? b.at) - +new Date(a.updatedAt ?? a.at));
   const done = all.filter((e) => filter === 'all' || (e.status ?? 'applied') === filter);
@@ -65,7 +66,7 @@ function Body() {
           <div className="card overflow-x-auto">
             {done.length ? (
               <table className="w-full text-left text-sm">
-                <thead className="text-xs text-muted"><tr><th className="p-3">Job</th><th className="p-3">Status</th><th className="p-3">Applied via</th><th className="p-3">Date</th><th className="p-3">Notes</th><th className="p-3" /></tr></thead>
+                <thead className="text-xs text-muted"><tr><th className="p-3">Job</th><th className="p-3">Status</th><th className="p-3">ATS</th><th className="p-3">Applied via</th><th className="p-3">Date</th><th className="p-3">Notes</th><th className="p-3" /></tr></thead>
                 <tbody>
                   {done.map((e) => (
                     <tr key={e.job.id} className="border-t border-line align-top">
@@ -75,6 +76,7 @@ function Body() {
                           {STATUSES.map((s) => <option key={s} value={s}>{label(s)}</option>)}
                         </select>
                       </td>
+                      <td className="p-3 tabular-nums">{scores[e.job.id] ? <Link href={`${jobHref(e.job)}#ats`} className={scores[e.job.id].score >= 75 ? 'text-good' : scores[e.job.id].score >= 50 ? 'text-warn' : 'text-bad'}>{scores[e.job.id].score}</Link> : <Link href={`${jobHref(e.job)}#ats`} className="text-xs text-accent hover:underline">Check</Link>}</td>
                       <td className="p-3 text-muted">{e.portal}</td>
                       <td className="p-3 text-muted">{new Date(e.at).toLocaleDateString()}</td>
                       <td className="p-3"><textarea aria-label={`Notes for ${e.job.title}`} className="field min-w-[12rem] !py-1 text-xs" rows={2} placeholder="Recruiter, interview date, follow-up…" defaultValue={e.notes ?? ''} onBlur={(ev) => { if (ev.target.value !== (e.notes ?? '')) update(e.job.id, { notes: ev.target.value.slice(0, 2000) }); }} /></td>

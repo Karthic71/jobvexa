@@ -21,6 +21,7 @@ export default function Privacy() {
         <li>Your light/dark theme choice.</li>
         <li>Jobs you save, your application tracker (status and notes), and your saved searches.</li>
         <li>If you use Resume match: the resume text you paste and the keywords found in it. It is analysed in your browser and never uploaded; use “Delete from this browser” to remove it.</li>
+        <li>If you use “Check your resume for this job”: the resume text (only if you tick “Remember my resume”) and the score for each job you checked, so the tracker can show it. The check runs in your browser; nothing is uploaded.</li>
         <li>Your recent searches.</li>
       </ul>
 

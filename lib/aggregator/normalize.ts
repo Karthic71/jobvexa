@@ -104,33 +104,45 @@ export function finalize(j: Omit<JobListing, 'id'>): JobListing {
   };
 }
 
-export async function fetchJson<T>(url: string, init: RequestInit = {}, timeoutMs = 8000): Promise<T> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      ...init,
-      signal: ctrl.signal,
-      headers: { Accept: 'application/json', ...(init.headers ?? {}) },
-      next: { revalidate: 600 },
-    } as RequestInit);
-    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
-    return (await res.json()) as T;
-  } finally {
-    clearTimeout(t);
+/** Error carrying the HTTP status and the first bit of the response body (for the run summary). */
+export class HttpError extends Error {
+  constructor(public status: number, statusText: string, public bodyStart = '') {
+    super(`HTTP ${status} ${statusText}${bodyStart ? ` — ${bodyStart}` : ''}`);
   }
 }
 
-export async function fetchText(url: string, init: RequestInit = {}, timeoutMs = 8000): Promise<string> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { ...init, signal: ctrl.signal, next: { revalidate: 600 } } as RequestInit);
-    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
-    return await res.text();
-  } finally {
-    clearTimeout(t);
+const RETRY_STATUSES = new Set([429, 502, 503, 504]);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** fetch with a timeout and one polite retry on temporary server errors (502/503/504/429). */
+async function fetchOk(url: string, init: RequestInit, timeoutMs: number, retries = 1): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, { ...init, signal: ctrl.signal, next: { revalidate: 600 } } as RequestInit);
+      if (res.ok) return res;
+      if (attempt < retries && RETRY_STATUSES.has(res.status)) {
+        const wait = Math.min(10_000, Number(res.headers.get('retry-after')) * 1000 || 2500 * (attempt + 1));
+        await sleep(wait * Number(process.env.COLLECT_GAP_SCALE ?? 1));
+        continue;
+      }
+      const body = await res.text().catch(() => '');
+      throw new HttpError(res.status, res.statusText, body.replace(/\s+/g, ' ').trim().slice(0, 120));
+    } finally {
+      clearTimeout(t);
+    }
   }
+}
+
+export async function fetchJson<T>(url: string, init: RequestInit = {}, timeoutMs = 8000): Promise<T> {
+  const res = await fetchOk(url, { ...init, headers: { Accept: 'application/json', ...(init.headers ?? {}) } }, timeoutMs);
+  return (await res.json()) as T;
+}
+
+export async function fetchText(url: string, init: RequestInit = {}, timeoutMs = 8000): Promise<string> {
+  const res = await fetchOk(url, init, timeoutMs);
+  return await res.text();
 }
 
 /** Parse free-text salaries such as "$65,000 - $80,000 a year" or "CA$28/hr". */
