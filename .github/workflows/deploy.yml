@@ -49,7 +49,7 @@ jobs:
           echo "url=https://${OWNER_LC}.github.io${BASE}" >> "$GITHUB_OUTPUT"
 
       - name: Restore data from the previous run
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: .cache
           key: jobvexa-state-${{ github.run_id }}
@@ -91,7 +91,7 @@ jobs:
 
       - name: Save data for the next run
         if: steps.collect.outcome == 'success'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: .cache
           key: jobvexa-state-${{ github.run_id }}
